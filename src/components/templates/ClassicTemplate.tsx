@@ -12,6 +12,12 @@ export const ClassicTemplate = ({ data, company }: ReceiptProps) => {
         <div className="w-[210mm] min-h-[297mm] p-16 border bg-white text-black font-serif mx-auto shadow-2xl flex flex-col box-border">
             {/* Header */}
             <div className="text-center border-b-2 border-black pb-8 mb-8">
+                {company.logoUrl && (
+                    <div className="flex justify-center mb-4">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={company.logoUrl} alt="Logo" className="h-24 object-contain" />
+                    </div>
+                )}
                 <h1 className="text-5xl font-bold uppercase tracking-wider mb-4">{company.name}</h1>
                 <p className="text-lg font-medium">{company.address}</p>
                 <div className="flex justify-center gap-4 text-sm mt-2">

@@ -20,13 +20,13 @@ interface SettingsContextType {
 }
 
 const defaultCompany: CompanySettings = {
-    name: "Apna Finance Corp",
+    name: "Patni Finance",
     tagline: "Trusted Financial Partner",
     address: "123, Market Road, City Center, Mumbai - 400001",
     gstin: "27ABCDE1234F1Z5",
     mobile: "+91 98765 43210",
     email: "support@apnafinance.com",
-    logoUrl: "",
+    logoUrl: "https://placehold.co/400x200?text=Patni+Finance",
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -41,7 +41,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         const savedTemplate = localStorage.getItem("printTemplate");
 
         if (savedCompany) {
-            try { setCompanySettings(JSON.parse(savedCompany)); } catch (e) { }
+            try {
+                const parsed = JSON.parse(savedCompany);
+                // Ensure logoUrl is not overwritten by empty string from old cache
+                if (!parsed.logoUrl) {
+                    parsed.logoUrl = defaultCompany.logoUrl;
+                }
+                setCompanySettings({ ...defaultCompany, ...parsed });
+            } catch (e) { }
         }
         if (savedTemplate) {
             setPrintTemplate(savedTemplate);

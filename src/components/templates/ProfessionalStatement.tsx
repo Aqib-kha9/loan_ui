@@ -3,7 +3,20 @@ import { format } from "date-fns";
 import { CompanySettings } from "@/components/providers/settings-provider";
 
 interface StatementProps {
-    data: any;
+    data: {
+        customerName: string;
+        loanAccountNo: string;
+        address: string;
+        mobile: string;
+        sanctionDate: string;
+        loanAmount: string;
+        interestRate: string;
+        interestPaidInAdvance: boolean;
+        totalInterest: number;
+        totalPaid: number;
+        closingBalance: number;
+        transactions: any[];
+    };
     company: CompanySettings;
 }
 
@@ -17,7 +30,10 @@ export const ProfessionalStatement = ({ data, company }: StatementProps) => {
             {/* Header */}
             <div className="px-12 mb-8 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center font-bold text-gray-400">LOGO</div>
+                    {company.logoUrl && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={company.logoUrl} alt="Logo" className="h-16 w-auto object-contain" />
+                    )}
                     <div>
                         <h1 className="text-2xl font-bold text-[#2c3e50] uppercase">{company.name}</h1>
                         <p className="text-sm text-gray-500">{company.address}</p>
@@ -25,8 +41,8 @@ export const ProfessionalStatement = ({ data, company }: StatementProps) => {
                 </div>
                 <div className="text-right">
                     <div className="bg-[#ecf0f1] px-4 py-2 rounded">
-                        <p className="text-xs font-bold text-gray-500 uppercase">Statement Period</p>
-                        <p className="font-mono font-bold">Apr 24 - Mar 25</p>
+                        <p className="text-xs font-bold text-gray-500 uppercase">Statement Date</p>
+                        <p className="font-mono font-bold">{format(new Date(), "dd MMM yyyy")}</p>
                     </div>
                 </div>
             </div>
@@ -49,39 +65,61 @@ export const ProfessionalStatement = ({ data, company }: StatementProps) => {
 
                         <span className="text-gray-500">Interest Rate:</span>
                         <span className="font-mono font-bold text-right">{data.interestRate}</span>
+
+                        <span className="text-gray-500">Int. Paid Adv:</span>
+                        <span className="font-mono font-bold text-right">{data.interestPaidInAdvance ? 'Yes' : 'No'}</span>
                     </div>
                 </div>
             </div>
 
             <div className="px-12 flex-1">
-                <table className="w-full text-sm">
+                <table className="w-full text-xs">
                     <thead>
                         <tr className="bg-[#2c3e50] text-white">
                             <th className="py-3 px-4 text-left font-semibold">Date</th>
-                            <th className="py-3 px-4 text-left font-semibold w-5/12">Description</th>
-                            <th className="py-3 px-4 text-right font-semibold">Debit</th>
-                            <th className="py-3 px-4 text-right font-semibold">Credit</th>
+                            <th className="py-3 px-4 text-left font-semibold">Particulars</th>
+                            <th className="py-3 px-4 text-right font-semibold">Principal</th>
+                            <th className="py-3 px-4 text-right font-semibold">Interest</th>
+                            <th className="py-3 px-4 text-right font-semibold">Penalty</th>
+                            <th className="py-3 px-4 text-right font-semibold">Total Paid</th>
                             <th className="py-3 px-4 text-right font-semibold">Balance</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                        <tr className="bg-gray-50">
-                            <td className="py-3 px-4 text-gray-500">{format(new Date(), "dd-MMM-yy")}</td>
-                            <td className="py-3 px-4 italic text-gray-500">Opening Balance</td>
-                            <td className="py-3 px-4 text-right text-gray-400">-</td>
-                            <td className="py-3 px-4 text-right text-gray-400">-</td>
-                            <td className="py-3 px-4 text-right font-mono font-bold">{Number(data.loanAmount).toLocaleString()}</td>
-                        </tr>
-                        {(data.transactions || []).map((txn: any, i: number) => (
+                        {(data.transactions || []).map((txn, i) => (
                             <tr key={i} className="hover:bg-blue-50">
-                                <td className="py-3 px-4 text-gray-700">{txn.date}</td>
-                                <td className="py-3 px-4 font-medium text-[#2c3e50]">{txn.type} <span className="text-gray-400 font-normal text-xs ml-1">({txn.ref})</span></td>
-                                <td className="py-3 px-4 text-right text-red-600">{txn.type === 'Internal Transfer' ? txn.amount : '-'}</td>
-                                <td className="py-3 px-4 text-right text-green-700">{txn.type !== 'Internal Transfer' ? txn.amount : '-'}</td>
-                                <td className="py-3 px-4 text-right font-mono">...</td>
+                                <td className="py-3 px-4 text-gray-700 whitespace-nowrap">{format(new Date(txn.date), "dd-MMM-yyyy")}</td>
+                                <td className="py-3 px-4 font-medium text-[#2c3e50]">
+                                    {txn.type === 'Disbursal' ? 'Loan Disbursal' : txn.type}
+                                    <span className="text-gray-400 font-normal text-xs ml-1">({txn.refNo || '-'})</span>
+                                </td>
+                                <td className="py-3 px-4 text-right text-gray-600">
+                                    {txn.principalComponent ? Number(txn.principalComponent).toLocaleString('en-IN') : '-'}
+                                </td>
+                                <td className="py-3 px-4 text-right text-red-600">
+                                    {txn.type === 'Interest' || txn.interestComponent ? Number(txn.amount).toLocaleString('en-IN') : (txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN') : '-')}
+                                </td>
+                                <td className="py-3 px-4 text-right text-gray-600">
+                                    {txn.penalty ? Number(txn.penalty).toLocaleString('en-IN') : '-'}
+                                </td>
+                                <td className="py-3 px-4 text-right text-green-700">
+                                    {txn.isPayment ? Number(txn.amount).toLocaleString('en-IN') : '-'}
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono font-bold">
+                                    {Number(txn.balanceAfter).toLocaleString('en-IN')}
+                                </td>
                             </tr>
                         ))}
                     </tbody>
+                    <tfoot className="bg-[#ecf0f1] font-bold">
+                        <tr>
+                            <td colSpan={3} className="py-3 px-4 text-right">Totals</td>
+                            <td className="py-3 px-4 text-right text-red-600">{Number(data.totalInterest).toLocaleString('en-IN')}</td>
+                            <td className="py-3 px-4 text-right">-</td>
+                            <td className="py-3 px-4 text-right text-green-700">{Number(data.totalPaid).toLocaleString('en-IN')}</td>
+                            <td className="py-3 px-4 text-right">{Number(data.closingBalance).toLocaleString('en-IN')}</td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
 

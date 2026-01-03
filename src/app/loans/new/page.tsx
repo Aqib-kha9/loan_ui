@@ -21,7 +21,10 @@ import {
     Building2,
     Landmark,
     Banknote,
-    CalendarClock
+    CalendarClock,
+    Plus,
+    Trash2,
+    AlertCircle
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -36,12 +39,10 @@ export default function NewLoanPage() {
         aadhar: "",
         pan: "",
 
-        // Guarantor Info
-        guarantorName: "",
-        guarantorMobile: "",
-
         // Loan Config
-        loanType: "Personal",
+        // Removed loanType as per request
+        interestType: "Flat", // Flat or Reducing
+        interestRateUnit: "Yearly", // Yearly or Monthly
         loanAmount: "50000",
         interestRate: "12",
         tenureMonths: "12",
@@ -49,10 +50,10 @@ export default function NewLoanPage() {
         repaymentFrequency: "Monthly",
         startDate: new Date().toISOString().split("T")[0],
 
-        // Bank Details
-        bankAccountNo: "",
-        ifscCode: "",
-        bankName: ""
+        // Payment Mode Splits
+        paymentModes: [
+            { type: "Cash", amount: "", reference: "" }
+        ],
     });
 
     const [calculations, setCalculations] = useState({
@@ -64,18 +65,38 @@ export default function NewLoanPage() {
     });
 
     // Calculate EMI whenever relevant fields change
+    // Calculate EMI whenever relevant fields change
     useEffect(() => {
         const P = parseFloat(formData.loanAmount) || 0;
-        const R = parseFloat(formData.interestRate) || 0;
+        let R = parseFloat(formData.interestRate) || 0;
         const N = parseFloat(formData.tenureMonths) || 0;
         const PF_Percent = parseFloat(formData.processingFeePercent) || 0;
 
+        // Normalize Interest Rate to Yearly if user selected Monthly
+        if (formData.interestRateUnit === "Monthly") {
+            R = R * 12;
+        }
+
         if (P > 0 && R > 0 && N > 0) {
-            // Flat Rate Calculation (Common in small finance)
-            // Total Interest = P * (R/100) * (N/12)
-            const totalInterest = (P * R * (N / 12)) / 100;
-            const totalPayable = P + totalInterest;
-            const emi = totalPayable / N;
+            let emi = 0;
+            let totalInterest = 0;
+            let totalPayable = 0;
+
+            if (formData.interestType === "Flat") {
+                // Flat Rate Calculation
+                // Total Interest = P * (R/100) * (N/12)
+                totalInterest = (P * R * (N / 12)) / 100;
+                totalPayable = P + totalInterest;
+                emi = totalPayable / N;
+            } else {
+                // Reducing Balance Calculation (Standard EMI Formula)
+                // r = monthly interest rate = (R / 12) / 100
+                // E = P * r * (1+r)^N / ((1+r)^N - 1)
+                const r = (R / 12) / 100;
+                emi = (P * r * Math.pow(1 + r, N)) / (Math.pow(1 + r, N) - 1);
+                totalPayable = emi * N;
+                totalInterest = totalPayable - P;
+            }
 
             const processingFeeAmount = (P * PF_Percent) / 100;
             const netDisbursal = P - processingFeeAmount;
@@ -90,11 +111,37 @@ export default function NewLoanPage() {
         } else {
             setCalculations({ emi: 0, totalInterest: 0, totalPayable: 0, processingFeeAmount: 0, netDisbursal: 0 });
         }
-    }, [formData.loanAmount, formData.interestRate, formData.tenureMonths, formData.processingFeePercent]);
+    }, [formData.loanAmount, formData.interestRate, formData.tenureMonths, formData.processingFeePercent, formData.interestType, formData.interestRateUnit]);
 
     const handleChange = (field: string, value: string) => {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
+
+    const handlePaymentModeChange = (index: number, field: string, value: string) => {
+        const newModes = [...formData.paymentModes];
+        // @ts-ignore
+        newModes[index] = { ...newModes[index], [field]: value };
+        setFormData(prev => ({ ...prev, paymentModes: newModes }));
+    };
+
+    const addPaymentMode = () => {
+        setFormData(prev => ({
+            ...prev,
+            paymentModes: [...prev.paymentModes, { type: "Cash", amount: "", reference: "" }]
+        }));
+    };
+
+    const removePaymentMode = (index: number) => {
+        if (formData.paymentModes.length > 1) {
+            setFormData(prev => ({
+                ...prev,
+                paymentModes: prev.paymentModes.filter((_, i) => i !== index)
+            }));
+        }
+    };
+
+    const totalSplitAmount = formData.paymentModes.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    const isSplitMatch = Math.abs(totalSplitAmount - calculations.netDisbursal) < 1;
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -103,17 +150,7 @@ export default function NewLoanPage() {
         // Reset or redirect logic would go here
     };
 
-    const getLoanIcon = (type: string) => {
-        switch (type) {
-            case "Business": return Briefcase;
-            case "Vehicle": return Car;
-            case "Mortgage": return Home;
-            case "Education": return GraduationCap;
-            default: return User;
-        }
-    };
 
-    const LoanIcon = getLoanIcon(formData.loanType);
 
     return (
         <div className="max-w-6xl mx-auto space-y-8 pb-20 animate-in fade-in slide-in-from-bottom-4 p-6">
@@ -180,17 +217,14 @@ export default function NewLoanPage() {
                         </CardHeader>
                         <CardContent className="grid sm:grid-cols-2 gap-6 pt-6">
                             <div className="space-y-2">
-                                <Label>Loan Category</Label>
-                                <Select value={formData.loanType} onValueChange={val => handleChange("loanType", val)}>
+                                <Label>Interest Type</Label>
+                                <Select value={formData.interestType} onValueChange={val => handleChange("interestType", val)}>
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="Personal"><div className="flex items-center gap-2"><User className="h-4 w-4" /> Personal Loan</div></SelectItem>
-                                        <SelectItem value="Business"><div className="flex items-center gap-2"><Briefcase className="h-4 w-4" /> Business Loan</div></SelectItem>
-                                        <SelectItem value="Vehicle"><div className="flex items-center gap-2"><Car className="h-4 w-4" /> Vehicle Loan</div></SelectItem>
-                                        <SelectItem value="Mortgage"><div className="flex items-center gap-2"><Home className="h-4 w-4" /> Mortgage Loan</div></SelectItem>
-                                        <SelectItem value="Education"><div className="flex items-center gap-2"><GraduationCap className="h-4 w-4" /> Education Loan</div></SelectItem>
+                                        <SelectItem value="Flat">Flat Rate</SelectItem>
+                                        <SelectItem value="Reducing">Reducing Balance</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -221,29 +255,36 @@ export default function NewLoanPage() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label>Interest Rate (% p.a) <span className="text-red-500">*</span></Label>
-                                <div className="relative">
-                                    <Input
-                                        type="number"
-                                        value={formData.interestRate}
-                                        onChange={e => handleChange("interestRate", e.target.value)}
-                                        className="pr-8"
-                                    />
-                                    <span className="absolute right-3 top-2.5 text-muted-foreground">%</span>
+                                <Label>Interest Rate <span className="text-red-500">*</span></Label>
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <Input
+                                            type="number"
+                                            value={formData.interestRate}
+                                            onChange={e => handleChange("interestRate", e.target.value)}
+                                            className="pr-8"
+                                        />
+                                        <span className="absolute right-3 top-2.5 text-muted-foreground">%</span>
+                                    </div>
+                                    <Select value={formData.interestRateUnit} onValueChange={val => handleChange("interestRateUnit", val)}>
+                                        <SelectTrigger className="w-[110px]">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Yearly">Yearly</SelectItem>
+                                            <SelectItem value="Monthly">Monthly</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                             </div>
                             <div className="space-y-2">
                                 <Label>Tenure (Months) <span className="text-red-500">*</span></Label>
-                                <Select value={formData.tenureMonths} onValueChange={val => handleChange("tenureMonths", val)}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select tenure" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {[6, 12, 18, 24, 36, 48, 60, 84].map(m => (
-                                            <SelectItem key={m} value={m.toString()}>{m} Months</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <Input
+                                    type="number"
+                                    placeholder="Enter months (e.g. 12)"
+                                    value={formData.tenureMonths}
+                                    onChange={e => handleChange("tenureMonths", e.target.value)}
+                                />
                             </div>
                             <div className="space-y-2">
                                 <Label>Processing Fee (%)</Label>
@@ -271,40 +312,85 @@ export default function NewLoanPage() {
                         </CardContent>
                     </Card>
 
-                    {/* SECTION 3: BANK & GUARANTOR */}
-                    <div className="grid md:grid-cols-2 gap-8">
-                        <Card>
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-base flex items-center gap-2"><Building2 className="h-4 w-4" /> Co-Applicant / Guarantor</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label>Guarantor Name</Label>
-                                    <Input placeholder="Full Name" value={formData.guarantorName} onChange={e => handleChange("guarantorName", e.target.value)} />
+                    {/* SECTION 2.5: DISBURSEMENT SPLIT */}
+                    <Card>
+                        <CardHeader className="pb-3 border-b bg-muted/20">
+                            <CardTitle className="text-base flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Banknote className="h-4 w-4" /> Disbursement Mode & Split
                                 </div>
-                                <div className="space-y-2">
-                                    <Label>Guarantor Mobile</Label>
-                                    <Input type="tel" placeholder="Mobile Number" value={formData.guarantorMobile} onChange={e => handleChange("guarantorMobile", e.target.value)} />
+                                {!isSplitMatch && (
+                                    <Badge variant="destructive" className="flex gap-1">
+                                        <AlertCircle className="h-3 w-3" /> Mismatch: {calculations.netDisbursal - totalSplitAmount}
+                                    </Badge>
+                                )}
+                                {isSplitMatch && (
+                                    <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+                                        Matched
+                                    </Badge>
+                                )}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3 pt-4">
+                            {formData.paymentModes.map((mode, index) => (
+                                <div key={index} className="flex flex-col sm:flex-row gap-3 items-end">
+                                    <div className="space-y-1 w-full sm:w-1/3">
+                                        <Label className="text-xs">Mode</Label>
+                                        <Select value={mode.type} onValueChange={val => handlePaymentModeChange(index, "type", val)}>
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="Cash">Cash</SelectItem>
+                                                <SelectItem value="Online Transfer">Online Transfer</SelectItem>
+                                                <SelectItem value="Cheque">Cheque</SelectItem>
+                                                <SelectItem value="UPI">UPI</SelectItem>
+                                                <SelectItem value="Demand Draft">Demand Draft</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1 w-full sm:w-1/3">
+                                        <Label className="text-xs">Amount</Label>
+                                        <Input
+                                            type="number"
+                                            placeholder="Amount"
+                                            value={mode.amount}
+                                            onChange={e => handlePaymentModeChange(index, "amount", e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-1 w-full sm:w-1/3">
+                                        <Label className="text-xs">Reference / Note</Label>
+                                        <Input
+                                            placeholder="Ref ID / Cheque No"
+                                            value={mode.reference}
+                                            onChange={e => handlePaymentModeChange(index, "reference", e.target.value)}
+                                        />
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="mb-0.5 text-muted-foreground hover:text-red-500"
+                                        onClick={() => removePaymentMode(index)}
+                                        disabled={formData.paymentModes.length === 1}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
                                 </div>
-                            </CardContent>
-                        </Card>
+                            ))}
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="mt-2 text-primary border-primary/20 hover:bg-primary/5"
+                                onClick={addPaymentMode}
+                            >
+                                <Plus className="h-4 w-4 mr-2" /> Add Split Payment
+                            </Button>
+                        </CardContent>
+                    </Card>
 
-                        <Card>
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-base flex items-center gap-2"><Landmark className="h-4 w-4" /> Bank Details (For Transfer)</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label>Account Number</Label>
-                                    <Input placeholder="0000000000" value={formData.bankAccountNo} onChange={e => handleChange("bankAccountNo", e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>IFSC Code</Label>
-                                    <Input className="uppercase" placeholder="HDFC0001234" value={formData.ifscCode} onChange={e => handleChange("ifscCode", e.target.value)} />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
+
                 </div>
 
                 {/* Right Column: Live Summary */}
@@ -312,7 +398,7 @@ export default function NewLoanPage() {
                     <Card className="sticky top-24 border-2 border-primary shadow-xl bg-card/95 backdrop-blur z-10">
                         <CardHeader className="bg-primary/5 pb-6">
                             <Badge className="w-fit mb-2 bg-primary/20 text-primary hover:bg-primary/20 border-none">
-                                <LoanIcon className="w-3 h-3 mr-1" /> {formData.loanType} Loan
+                                {formData.interestType} Rate Loan
                             </Badge>
                             <CardTitle className="flex items-center gap-2 text-2xl text-primary">
                                 <Calculator className="h-6 w-6" /> Summary
@@ -331,7 +417,7 @@ export default function NewLoanPage() {
                                     <span className="font-medium">₹{parseInt(formData.loanAmount || '0').toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between text-muted-foreground">
-                                    <span>Interest ({formData.interestRate}%)</span>
+                                    <span>Interest ({formData.interestRate}% {formData.interestRateUnit === 'Monthly' ? 'p.m' : 'p.a'})</span>
                                     <span>+ ₹{calculations.totalInterest.toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between text-muted-foreground">

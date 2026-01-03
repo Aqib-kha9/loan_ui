@@ -31,12 +31,18 @@ import { cn } from "@/lib/utils";
 // ... imports
 import { useSettings } from "@/components/providers/settings-provider";
 import { getTemplate } from "@/components/templates/registry";
+import { generateLedger } from "@/lib/ledger-utils";
 
 export default function StatementsPage() {
     const [searchTerm, setSearchTerm] = useState("");
-    const [selectedClient, setSelectedClient] = useState<LoanAccount | null>(null);
+    const [selectedLoanNumber, setSelectedLoanNumber] = useState<string | null>(null);
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
+
+    // Derive selectedClient from fresh MOCK_LOANS
+    const selectedClient = selectedLoanNumber
+        ? MOCK_LOANS.find(l => l.loanNumber === selectedLoanNumber)
+        : null;
 
     // Get Settings
     const { companySettings, printTemplate } = useSettings();
@@ -74,6 +80,13 @@ export default function StatementsPage() {
     const transactions = getFilteredTransactions();
 
     // Prepare data for template
+    const ledgerEntries = selectedClient ? generateLedger(selectedClient) : [];
+
+    // Calculate Totals
+    const totalInterest = ledgerEntries.reduce((sum, t) => sum + (t.type === 'Interest' ? t.debit : 0), 0);
+    const totalPaid = ledgerEntries.reduce((sum, t) => sum + t.credit, 0);
+    const closingBalance = ledgerEntries.length > 0 ? ledgerEntries[ledgerEntries.length - 1].balance : 0;
+
     const statementData = selectedClient ? {
         customerName: selectedClient.customerName,
         loanAccountNo: selectedClient.loanNumber,
@@ -82,11 +95,23 @@ export default function StatementsPage() {
         sanctionDate: selectedClient.disbursedDate,
         loanAmount: selectedClient.totalLoanAmount.toString(),
         interestRate: selectedClient.interestRate + "%",
-        transactions: transactions.map(t => ({
-            date: t.date,
+        interestPaidInAdvance: selectedClient.interestPaidInAdvance,
+        // Pass totals
+        totalInterest: totalInterest,
+        totalPaid: totalPaid,
+        closingBalance: closingBalance,
+        transactions: ledgerEntries.map(t => ({
+            date: t.date, // Format date in template for consistency
             type: t.type,
-            amount: t.amount.toString(),
-            ref: t.id
+            // Pass specific amounts
+            amount: t.credit > 0 ? t.credit : t.debit,
+            isPayment: t.credit > 0,
+            ref: t.refNo,
+            refNo: t.refNo,
+            principalComponent: t.principalComponent,
+            interestComponent: t.interestComponent,
+            penalty: 0,
+            balanceAfter: t.balance
         }))
     } : null;
 
@@ -140,7 +165,7 @@ export default function StatementsPage() {
                                                 selectedClient?.loanNumber === client.loanNumber && "bg-primary/5"
                                             )}
                                             onClick={() => {
-                                                setSelectedClient(client);
+                                                setSelectedLoanNumber(client.loanNumber);
                                                 setSearchTerm("");
                                             }}
                                         >
@@ -162,7 +187,7 @@ export default function StatementsPage() {
                             <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
                                 <div className="flex justify-between items-start mb-2">
                                     <span className="text-xs font-bold uppercase text-primary tracking-wider">Selected</span>
-                                    <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground" onClick={() => setSelectedClient(null)}>
+                                    <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground" onClick={() => setSelectedLoanNumber(null)}>
                                         Change
                                     </Button>
                                 </div>

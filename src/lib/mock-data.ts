@@ -45,6 +45,10 @@ export type Transaction = {
   id: string;
   date: string;
   amount: number;
+  principalComponent?: number;
+  interestComponent?: number;
+  penalty?: number;
+  refNo?: string;
   type: "EMI" | "Part Payment" | "Closure" | "Fee";
   balanceAfter: number;
 };
@@ -64,9 +68,10 @@ export const MOCK_LOANS: LoanAccount[] = [
     occupation: "Shopkeeper (Kirana)",
     
     totalLoanAmount: 50000,
-    disbursedDate: "2024-01-15",
+    disbursedDate: "2025-09-15",
     emiAmount: 4500,
     interestRate: 12,
+    interestPaidInAdvance: true, // Example value
     tenureMonths: 12,
     emisPaid: 4,
     status: "Active",
@@ -87,10 +92,12 @@ export const MOCK_LOANS: LoanAccount[] = [
     ifscCode: "SBIN0001234",
 
     transactions: [
-       { id: "TXN001", date: "2024-02-15", amount: 4500, type: "EMI", balanceAfter: 45500 },
-       { id: "TXN002", date: "2024-03-15", amount: 4500, type: "EMI", balanceAfter: 41000 },
-       { id: "TXN003", date: "2024-04-15", amount: 4500, type: "EMI", balanceAfter: 36500 },
-       { id: "TXN004", date: "2024-05-15", amount: 4500, type: "EMI", balanceAfter: 32000 },
+       // Disbursal 15 Sep 2025
+       // 15 Oct 2025: Paid full interest.
+       { id: "TXN001", date: "2025-10-15", amount: 5000, principalComponent: 0, interestComponent: 0, penalty: 0, refNo: "UPI/12345/SBI", type: "EMI", balanceAfter: 0 },
+       // 15 Nov 2025: SKIPPED (Capitalization check)
+       // 15 Dec 2025: Partial Payment
+       { id: "TXN003", date: "2025-12-15", amount: 10000, principalComponent: 0, interestComponent: 0, penalty: 0, refNo: "CASH-REC-003", type: "EMI", balanceAfter: 0 },
     ]
   },
   {

@@ -3,7 +3,20 @@ import { format } from "date-fns";
 import { CompanySettings } from "@/components/providers/settings-provider";
 
 interface StatementProps {
-    data: any;
+    data: {
+        customerName: string;
+        loanAccountNo: string;
+        address: string;
+        mobile: string;
+        sanctionDate: string;
+        loanAmount: string;
+        interestRate: string;
+        interestPaidInAdvance: boolean;
+        totalInterest: number;
+        totalPaid: number;
+        closingBalance: number;
+        transactions: any[];
+    };
     company: CompanySettings;
 }
 
@@ -13,9 +26,15 @@ export const ElegantStatement = ({ data, company }: StatementProps) => {
 
             {/* Header */}
             <div className="flex justify-between items-end border-b border-[#d4af37] pb-8 mb-12">
-                <div>
-                    <h1 className="text-4xl text-[#1a1a1a] tracking-widest mb-1">{company.name}</h1>
-                    <p className="text-[#d4af37] text-xs uppercase tracking-[0.2em]">{company.tagline}</p>
+                <div className="flex gap-6 items-center">
+                    {company.logoUrl && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={company.logoUrl} alt="Logo" className="h-20 w-auto object-contain grayscale sepia" />
+                    )}
+                    <div>
+                        <h1 className="text-4xl text-[#1a1a1a] tracking-widest mb-1">{company.name}</h1>
+                        <p className="text-[#d4af37] text-xs uppercase tracking-[0.2em]">{company.tagline}</p>
+                    </div>
                 </div>
                 <div className="text-right text-xs text-gray-500 italic">
                     <p>{company.address}</p>
@@ -26,73 +45,92 @@ export const ElegantStatement = ({ data, company }: StatementProps) => {
             {/* Context */}
             <div className="text-center mb-12">
                 <h2 className="text-2xl uppercase tracking-[0.2em] font-light">Statement of Account</h2>
-                <p className="text-[#d4af37] italic mt-2">Private & Confidential</p>
+                <div className="w-16 h-[1px] bg-[#d4af37] mx-auto mt-4 mb-2"></div>
+                <p className="text-[#d4af37] italic">Private & Confidential</p>
             </div>
 
             {/* Info Grid */}
             <div className="grid grid-cols-2 gap-12 mb-12 text-sm">
-                <div className="bg-white p-6 shadow-sm border border-gray-100">
+                <div className="bg-white p-6 shadow-sm border border-[#f0e6d2]">
                     <h3 className="text-[#d4af37] uppercase tracking-widest text-xs mb-4">Client Details</h3>
                     <p className="text-xl mb-1">{data.customerName}</p>
-                    <p className="text-gray-500 italic">{data.address}</p>
-                    <p className="text-gray-500 mt-2">Ph: {data.mobile}</p>
+                    <p className="text-gray-500 italic mb-2">{data.address}</p>
+                    <p className="text-gray-500">Ph: {data.mobile}</p>
                 </div>
-                <div className="bg-white p-6 shadow-sm border border-gray-100 text-right">
+                <div className="bg-white p-6 shadow-sm border border-[#f0e6d2] text-right">
                     <h3 className="text-[#d4af37] uppercase tracking-widest text-xs mb-4">Loan Summary</h3>
                     <div className="space-y-2">
-                        <div className="flex justify-between border-b border-gray-100 pb-1">
-                            <span className="text-gray-500">Account No</span>
+                        <div className="flex justify-between border-b border-[#f0e6d2] pb-1">
+                            <span className="text-gray-500 italic">Account No</span>
                             <span>{data.loanAccountNo}</span>
                         </div>
-                        <div className="flex justify-between border-b border-gray-100 pb-1">
-                            <span className="text-gray-500">Sanctioned</span>
+                        <div className="flex justify-between border-b border-[#f0e6d2] pb-1">
+                            <span className="text-gray-500 italic">Sanctioned</span>
                             <span>{Number(data.loanAmount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
                         </div>
-                        <div className="flex justify-between border-b border-gray-100 pb-1">
-                            <span className="text-gray-500">Interest</span>
+                        <div className="flex justify-between border-b border-[#f0e6d2] pb-1">
+                            <span className="text-gray-500 italic">Interest</span>
                             <span>{data.interestRate}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-[#f0e6d2] pb-1">
+                            <span className="text-gray-500 italic">Advance Int.</span>
+                            <span>{data.interestPaidInAdvance ? 'Yes' : 'No'}</span>
+                        </div>
+                        <div className="flex justify-between pt-2">
+                            <span className="text-[#d4af37] font-bold uppercase tracking-wider text-xs">Closing Bal</span>
+                            <span className="font-bold text-lg">{Number(data.closingBalance).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
                         </div>
                     </div>
                 </div>
             </div>
 
             {/* Table */}
-            <table className="w-full mb-12">
-                <thead>
-                    <tr className="border-b-2 border-[#1a1a1a]">
-                        <th className="text-left py-4 font-normal uppercase tracking-widest text-xs">Date</th>
-                        <th className="text-left py-4 font-normal uppercase tracking-widest text-xs">Description</th>
-                        <th className="text-right py-4 font-normal uppercase tracking-widest text-xs text-red-800">Debit</th>
-                        <th className="text-right py-4 font-normal uppercase tracking-widest text-xs text-green-800">Credit</th>
-                        <th className="text-right py-4 font-normal uppercase tracking-widest text-xs">Balance</th>
-                    </tr>
-                </thead>
-                <tbody className="text-sm">
-                    <tr className="border-b border-gray-100">
-                        <td className="py-4 text-gray-500">{format(new Date(), "dd MMM yyyy")}</td>
-                        <td className="py-4 italic">Opening Balance</td>
-                        <td className="py-4 text-right">-</td>
-                        <td className="py-4 text-right">-</td>
-                        <td className="py-4 text-right">{Number(data.loanAmount).toLocaleString()}</td>
-                    </tr>
-                    {(data.transactions || []).map((txn: any, i: number) => (
-                        <tr key={i} className="border-b border-gray-100 hover:bg-[#1a1a1a]/5 transition-colors">
-                            <td className="py-4 text-gray-500">{txn.date}</td>
-                            <td className="py-4">
-                                {txn.type}
-                                <span className="block text-[10px] text-[#d4af37]">{txn.ref}</span>
-                            </td>
-                            <td className="py-4 text-right text-red-900/70">{txn.type === 'Internal Transfer' ? txn.amount : '-'}</td>
-                            <td className="py-4 text-right text-green-900/70">{txn.type !== 'Internal Transfer' ? txn.amount : '-'}</td>
-                            <td className="py-4 text-right text-gray-600 font-medium">...</td>
+            <div className="flex-1">
+                <table className="w-full mb-12 border-collapse">
+                    <thead>
+                        <tr className="border-b-2 border-[#1a1a1a]">
+                            <th className="text-left py-4 font-normal uppercase tracking-widest text-xs w-28">Date</th>
+                            <th className="text-left py-4 font-normal uppercase tracking-widest text-xs">Particulars</th>
+                            <th className="text-right py-4 font-normal uppercase tracking-widest text-xs text-[#8b0000]">Interest (Dr)</th>
+                            <th className="text-right py-4 font-normal uppercase tracking-widest text-xs text-[#006400]">Paid (Cr)</th>
+                            <th className="text-right py-4 font-normal uppercase tracking-widest text-xs">Balance</th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody className="text-sm">
+                        {(data.transactions || []).map((txn, i) => (
+                            <tr key={i} className="border-b border-[#f0e6d2] hover:bg-[#fcfbf8] transition-colors">
+                                <td className="py-4 text-gray-500 whitespace-nowrap">{format(new Date(txn.date), "dd MMM yyyy")}</td>
+                                <td className="py-4">
+                                    {txn.type === 'Disbursal' ? 'Loan Disbursal' : txn.type}
+                                    <span className="block text-[10px] text-[#d4af37] mt-1">{txn.refNo || '-'}</span>
+                                </td>
+                                <td className="py-4 text-right text-[#8b0000]/80">
+                                    {txn.type === 'Interest' || txn.interestComponent ? Number(txn.amount).toLocaleString('en-IN') : '-'}
+                                </td>
+                                <td className="py-4 text-right text-[#006400]/80 font-medium">
+                                    {txn.isPayment ? Number(txn.amount).toLocaleString('en-IN') : '-'}
+                                </td>
+                                <td className="py-4 text-right text-gray-800">
+                                    {Number(txn.balanceAfter).toLocaleString('en-IN')}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                    <tfoot className="border-t-2 border-[#d4af37]">
+                        <tr>
+                            <td colSpan={2} className="py-4 text-right text-xs uppercase tracking-widest text-[#d4af37]">Summary</td>
+                            <td className="py-4 text-right text-[#8b0000]">{Number(data.totalInterest).toLocaleString('en-IN')}</td>
+                            <td className="py-4 text-right text-[#006400]">{Number(data.totalPaid).toLocaleString('en-IN')}</td>
+                            <td className="py-4 text-right font-bold">{Number(data.closingBalance).toLocaleString('en-IN')}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
 
             {/* Footer */}
-            <div className="mt-auto flex items-center justify-center p-8">
-                <div className="w-8 h-8 border border-[#d4af37] rotate-45"></div>
+            <div className="mt-auto flex flex-col items-center justify-center p-8 text-center bg-[#fffcf5]">
+                <div className="w-8 h-8 border border-[#d4af37] rotate-45 mb-4"></div>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-gray-400">Excellence in Finance</p>
             </div>
         </div>
     );

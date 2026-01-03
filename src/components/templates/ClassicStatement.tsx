@@ -11,6 +11,10 @@ interface StatementProps {
         sanctionDate: string;
         loanAmount: string;
         interestRate: string;
+        interestPaidInAdvance: boolean;
+        totalInterest: number;
+        totalPaid: number;
+        closingBalance: number;
         transactions: any[];
     };
     company: CompanySettings;
@@ -20,14 +24,23 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
     return (
         <div className="w-[210mm] min-h-[297mm] bg-white text-black font-serif p-12 border mx-auto shadow-2xl flex flex-col box-border">
             {/* Header */}
-            <div className="text-center border-b-2 border-black pb-6 mb-8">
-                <h1 className="text-4xl font-bold uppercase tracking-widest mb-2">{company.name}</h1>
-                <p className="text-sm font-bold uppercase">{company.tagline}</p>
-                <p className="text-sm mt-1">{company.address}</p>
-                <div className="flex justify-center gap-4 text-xs font-bold mt-2">
-                    <span>GSTIN: {company.gstin}</span>
-                    <span>|</span>
-                    <span>CONTACT: {company.mobile}</span>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b-2 border-black pb-6 mb-8">
+                <div className="flex-shrink-0 mr-4">
+                    {company.logoUrl && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={company.logoUrl} alt="Logo" className="h-24 object-contain max-w-[200px]" />
+                    )}
+                </div>
+                <div className="text-right flex-grow">
+                    <h1 className="text-4xl font-bold uppercase tracking-widest mb-2">{company.name}</h1>
+                    <p className="text-sm font-bold uppercase">{company.tagline}</p>
+                    <p className="text-sm mt-1">{company.address}</p>
+                    <div className="flex justify-end gap-4 text-xs font-bold mt-2">
+                        <span>GSTIN: {company.gstin}</span>
+                        <span>|</span>
+                        <span>CONTACT: {company.mobile}</span>
+                    </div>
                 </div>
             </div>
 
@@ -79,6 +92,10 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
                                     <td className="font-bold align-top">Interest Rate:</td>
                                     <td className="align-top">{data.interestRate}</td>
                                 </tr>
+                                <tr>
+                                    <td className="font-bold align-top">Int. Advance:</td>
+                                    <td className="align-top">{data.interestPaidInAdvance ? 'Yes' : 'No'}</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -91,36 +108,43 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
                     <tr className="bg-gray-200">
                         <th className="border border-black p-2 text-left w-24">Date</th>
                         <th className="border border-black p-2 text-left">Particulars</th>
-                        <th className="border border-black p-2 text-right w-24">Debit</th>
-                        <th className="border border-black p-2 text-right w-24">Credit</th>
+                        <th className="border border-black p-2 text-left w-28">Ref No.</th>
+                        <th className="border border-black p-2 text-right w-24">Principal</th>
+                        <th className="border border-black p-2 text-right w-24">Interest</th>
+                        <th className="border border-black p-2 text-right w-20">Penalty</th>
+                        <th className="border border-black p-2 text-right w-24">Total Paid</th>
                         <th className="border border-black p-2 text-right w-28">Balance</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {/* Op Balance Mock */}
-                    <tr>
-                        <td className="border border-black p-2">{format(new Date().setMonth(new Date().getMonth() - 6), "dd/MM/yyyy")}</td>
-                        <td className="border border-black p-2">Opening Balance</td>
-                        <td className="border border-black p-2 text-right">-</td>
-                        <td className="border border-black p-2 text-right">-</td>
-                        <td className="border border-black p-2 text-right font-bold">{Number(data.loanAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    </tr>
                     {/* Transactions */}
                     {(data.transactions || []).map((txn, i) => (
                         <tr key={i}>
-                            <td className="border border-black p-2">{txn.date}</td>
-                            <td className="border border-black p-2">
-                                {txn.type} <span className="text-xs">[{txn.ref}]</span>
+                            <td className="border border-black p-2 whitespace-nowrap">{format(new Date(txn.date), "dd-MMM-yyyy")}</td>
+                            <td className="border border-black p-2">{txn.type === 'Disbursal' ? 'Loan Disbursal' : txn.type}</td>
+                            <td className="border border-black p-2">{txn.refNo || '-'}</td>
+                            <td className="border border-black p-2 text-right">
+                                {txn.principalComponent ? Number(txn.principalComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                             </td>
                             <td className="border border-black p-2 text-right">
-                                {txn.type === 'Internal Transfer' ? Number(txn.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                                {/* Show Interest Component OR Interest Debit Amount */}
+                                {txn.type === 'Interest'
+                                    ? Number(txn.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })
+                                    : (txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-')
+                                }
                             </td>
                             <td className="border border-black p-2 text-right">
-                                {txn.type !== 'Internal Transfer' ? Number(txn.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                                {txn.penalty ? Number(txn.penalty).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                            </td>
+                            <td className="border border-black p-2 text-right font-bold">
+                                {/* Only show in Total Paid if it is a payment */}
+                                {txn.isPayment
+                                    ? Number(txn.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })
+                                    : '-'
+                                }
                             </td>
                             <td className="border border-black p-2 text-right">
-                                {/* Mock balance logic for visual purpose */}
-                                {Number(Number(data.loanAmount) - (i + 1) * 15000).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                {Number(txn.balanceAfter).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
                         </tr>
                     ))}
@@ -132,15 +156,15 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
                 <div className="w-1/2 border-2 border-black p-4">
                     <div className="flex justify-between mb-2">
                         <span className="font-bold">Total Interest Debited:</span>
-                        <span>₹ 0.00</span>
+                        <span>{Number(data.totalInterest || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
                     </div>
                     <div className="flex justify-between mb-2">
                         <span className="font-bold">Total Amount Paid:</span>
-                        <span>{Number(31000).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
+                        <span>{Number(data.totalPaid || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
                     </div>
                     <div className="border-t border-black pt-2 flex justify-between text-lg font-bold">
                         <span>Closing Balance:</span>
-                        <span>{Number(469000).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
+                        <span>{Number(data.closingBalance || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
                     </div>
                 </div>
             </div>
@@ -148,6 +172,28 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
             <div className="mt-auto text-center text-xs">
                 <p>This is a computer generated statement and does not require a signature.</p>
                 <p className="font-bold mt-1">END OF STATEMENT</p>
+                <p className="mt-4 italic text-[10px]">
+                    "I/We hereby certify that the particulars furnished above are true and correct as per our books of accounts."
+                </p>
+                <div className="mt-2 font-bold uppercase border-t border-black inline-block pt-1 px-4">
+                    Subject to {company.address ? company.address.split(',').pop()?.trim() : 'Local'} Jurisdiction
+                </div>
+            </div>
+
+            {/* Legal / Court Signatory Section */}
+            <div className="mt-8 flex justify-between items-end pb-8 break-inside-avoid">
+                <div className="text-center w-64">
+                    <div className="h-20 border-b border-black mb-2"></div>
+                    <div className="font-bold text-sm">Customer Signature</div>
+                    <div className="text-[10px]">(I accept this statement as correct)</div>
+                </div>
+                <div className="text-center w-64">
+                    <div className="h-20 mb-2 flex items-end justify-center pb-2">
+                        <span className="text-gray-400 text-xs">[Stamp / Seal]</span>
+                    </div>
+                    <div className="border-t border-black pt-2 font-bold text-sm">Authorized Signatory</div>
+                    <div className="text-[10px]">{company.name}</div>
+                </div>
             </div>
         </div>
     );

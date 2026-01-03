@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { useSettings } from "@/components/providers/settings-provider";
 import { getTemplate } from "@/components/templates/registry";
 import { getLoanDetails } from "@/lib/mock-data";
+import { generateLedger } from "@/lib/ledger-utils";
 import { ArrowLeft, Printer, Download, IndianRupee, Calendar, User, Phone, MapPin } from "lucide-react";
 
 export default function LoanLedgerPage() {
@@ -52,36 +53,22 @@ export default function LoanLedgerPage() {
     }
 
     // Ledger Calculation (On-screen view logic)
-    // We start with the loan amount as the initial balance (Debit)
-    // Then subtract payments (Credit)
-    // This is a simplified ledger view for visual purposes
-    let runningBalance = loan.totalLoanAmount;
-    const ledgerEntries = [
-        {
-            id: 'DISBURSAL',
-            date: loan.disbursedDate,
-            particular: 'Loan Amount Disbursed',
-            type: 'Disbursal',
-            debit: loan.totalLoanAmount,
-            credit: 0,
-            balance: loan.totalLoanAmount
-        },
-        ...(loan.transactions?.map(txn => {
-            const credit = txn.type === 'EMI' || txn.type === 'Part Payment' ? txn.amount : 0;
-            const debit = txn.type === 'Fee' ? txn.amount : 0;
-            runningBalance = runningBalance - credit + debit;
+    // Use centralized utility
+    const ledgerEntries = generateLedger(loan);
+    const displayEntries = ledgerEntries.map((entry, index) => ({
+        id: entry.refNo === '-' ? `SYS-${index}` : entry.refNo || `TXN-${index}`,
+        date: entry.date,
+        particular: entry.particulars,
+        type: entry.type,
+        debit: entry.debit,
+        credit: entry.credit,
+        balance: entry.balance
+    }));
 
-            return {
-                id: txn.id,
-                date: txn.date,
-                particular: txn.type,
-                type: txn.type,
-                debit: debit,
-                credit: credit,
-                balance: txn.balanceAfter // Use pre-calculated balance from mock data for consistency
-            };
-        }) || [])
-    ];
+    // Calculate Totals for Print
+    const totalInterest = ledgerEntries.reduce((sum, t) => sum + (t.type === 'Interest' ? t.debit : 0), 0);
+    const totalPaid = ledgerEntries.reduce((sum, t) => sum + t.credit, 0);
+    const closingBalance = ledgerEntries.length > 0 ? ledgerEntries[ledgerEntries.length - 1].balance : 0;
 
     // Data Structure for the Print Template
     const statementData = {
@@ -92,12 +79,22 @@ export default function LoanLedgerPage() {
         sanctionDate: loan.disbursedDate,
         loanAmount: loan.totalLoanAmount.toString(),
         interestRate: loan.interestRate + "%",
-        transactions: loan.transactions?.map(t => ({
+        interestPaidInAdvance: loan.interestPaidInAdvance,
+        totalInterest,
+        totalPaid,
+        closingBalance,
+        transactions: ledgerEntries.map(t => ({
             date: t.date,
             type: t.type,
-            amount: t.amount.toString(),
-            ref: t.id
-        })) || []
+            amount: t.credit > 0 ? t.credit : t.debit,
+            isPayment: t.credit > 0,
+            ref: t.refNo,
+            refNo: t.refNo,
+            principalComponent: t.principalComponent,
+            interestComponent: t.interestComponent,
+            penalty: 0,
+            balanceAfter: t.balance
+        }))
     };
 
     return (
@@ -210,12 +207,12 @@ export default function LoanLedgerPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {ledgerEntries.map((entry) => (
+                            {displayEntries.map((entry) => (
                                 <TableRow key={entry.id}>
                                     <TableCell className="font-medium text-xs font-mono">{new Date(entry.date).toLocaleDateString()}</TableCell>
                                     <TableCell>
                                         <div className="font-medium text-sm">{entry.particular}</div>
-                                        {entry.id !== 'DISBURSAL' && <div className="text-[10px] text-muted-foreground font-mono">Ref: {entry.id}</div>}
+                                        {entry.type !== 'Disbursal' && entry.type !== 'Interest' && <div className="text-[10px] text-muted-foreground font-mono">Ref: {entry.id}</div>}
                                     </TableCell>
                                     <TableCell>
                                         <Badge variant="outline" className="text-[10px] font-normal">{entry.type}</Badge>
@@ -227,7 +224,7 @@ export default function LoanLedgerPage() {
                                         {entry.debit > 0 ? `₹${entry.debit.toLocaleString()}` : '-'}
                                     </TableCell>
                                     <TableCell className="text-right font-bold font-mono">
-                                        ₹{entry.balance.toLocaleString()}
+                                        ₹{entry.balance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                                     </TableCell>
                                 </TableRow>
                             ))}
