@@ -8,25 +8,23 @@ import {
     Download,
     FileText,
     Calendar as CalendarIcon,
-    Filter
+    Filter,
+    X,
+    ChevronRight,
+    Home
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow
-} from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { MOCK_LOANS, LoanAccount } from "@/lib/mock-data";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MOCK_LOANS } from "@/lib/mock-data";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { format } from "date-fns";
 
 // ... imports
 import { useSettings } from "@/components/providers/settings-provider";
@@ -39,7 +37,7 @@ export default function StatementsPage() {
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
 
-    // Derive selectedClient from fresh MOCK_LOANS
+    // Derive selectedClient
     const selectedClient = selectedLoanNumber
         ? MOCK_LOANS.find(l => l.loanNumber === selectedLoanNumber)
         : null;
@@ -57,11 +55,11 @@ export default function StatementsPage() {
     });
 
     // Filter logic for search
-    const filteredClients = searchTerm.length > 1 ? MOCK_LOANS.filter(client =>
+    const filteredClients = searchTerm.length > 0 ? MOCK_LOANS.filter(client =>
         client.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         client.loanNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         client.mobile.includes(searchTerm)
-    ) : [];
+    ) : MOCK_LOANS.slice(0, 10); // Show recent 10 by default
 
     // Filter logic for transactions
     const getFilteredTransactions = () => {
@@ -79,7 +77,7 @@ export default function StatementsPage() {
 
     const transactions = getFilteredTransactions();
 
-    // Prepare data for template
+    // Prepare data
     const ledgerEntries = selectedClient ? generateLedger(selectedClient) : [];
 
     // Calculate Totals
@@ -101,9 +99,8 @@ export default function StatementsPage() {
         totalPaid: totalPaid,
         closingBalance: closingBalance,
         transactions: ledgerEntries.map(t => ({
-            date: t.date, // Format date in template for consistency
+            date: t.date,
             type: t.type,
-            // Pass specific amounts
             amount: t.credit > 0 ? t.credit : t.debit,
             isPayment: t.credit > 0,
             ref: t.refNo,
@@ -115,154 +112,207 @@ export default function StatementsPage() {
         }))
     } : null;
 
-    return (
-        <div className="p-6 max-w-7xl mx-auto space-y-6 min-h-screen bg-muted/5">
-            {/* NO PRINT HEADER */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Statement Generation</h1>
-                    <p className="text-muted-foreground mt-1">Generate, view, and print detailed loan statements.</p>
-                </div>
-                <div className="bg-white px-3 py-1 rounded-full border text-xs font-medium text-muted-foreground shadow-sm">
-                    Using Template: <span className="text-primary font-bold">{selectedTemplateConfig.name}</span>
-                </div>
-            </div>
+    const [isSidebarHovered, setIsSidebarHovered] = useState(false);
+    const isCollapsed = !!selectedLoanNumber && !isSidebarHovered;
 
-            {/* SEARCH & SELECTION (NO PRINT) */}
-            <div className="grid gap-6 md:grid-cols-12 print:hidden">
-                {/* SEARCH PANEL */}
-                <Card className="md:col-span-4 h-fit">
-                    <SectionHeader icon={Search} title="Find Customer" />
-                    <CardContent className="space-y-4">
+    return (
+        <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-5rem)] bg-background flex flex-col md:flex-row overflow-hidden border-t divide-x">
+
+            {/* LEFT SIDEBAR: Search & List */}
+            <div
+                className={cn(
+                    "flex flex-col h-full bg-background z-30 transition-all duration-500 ease-in-out border-r relative group/sidebar shadow-xl md:shadow-none",
+                    isCollapsed ? "w-[4.5rem] border-r-primary/10" : "w-full md:w-64 lg:w-72"
+                )}
+                onMouseEnter={() => setIsSidebarHovered(true)}
+                onMouseLeave={() => setIsSidebarHovered(false)}
+            >
+                {/* Content Container */}
+                <div className="flex flex-col h-full w-full overflow-hidden">
+
+                    {/* Sidebar Header */}
+                    <div className={cn(
+                        "h-14 border-b flex items-center shrink-0 bg-background/50 backdrop-blur transition-all",
+                        isCollapsed ? "justify-center px-0" : "justify-between px-4"
+                    )}>
+                        {!isCollapsed && <h2 className="font-semibold text-sm">Customers</h2>}
+                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{filteredClients.length}</Badge>
+                    </div>
+
+                    {/* Search Bar (Hidden when collapsed) */}
+                    <div className={cn(
+                        "border-b transition-all duration-300 overflow-hidden",
+                        isCollapsed ? "h-0 opacity-0 p-0" : "h-auto opacity-100 p-3"
+                    )}>
                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                             <Input
-                                placeholder="Search Name, Loan ID..."
-                                className="pl-9"
+                                placeholder="Search..."
+                                className="pl-9 h-9 bg-muted/40 border-transparent focus:bg-background focus:border-input transition-all text-xs"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         </div>
-                        <div className="flex gap-2 text-xs text-muted-foreground">
-                            <span>Try:</span>
-                            <button className="hover:text-primary hover:underline" onClick={() => setSearchTerm("LN001")}>LN001</button>
-                            <span>•</span>
-                            <button className="hover:text-primary hover:underline" onClick={() => setSearchTerm("Rahul")}>Rahul</button>
-                            <span>•</span>
-                            <button className="hover:text-primary hover:underline" onClick={() => setSearchTerm("98765")}>98765</button>
-                        </div>
+                    </div>
 
-                        {searchTerm.length > 1 && (
-                            <div className="border rounded-md divide-y max-h-60 overflow-y-auto bg-background">
-                                {filteredClients.length === 0 ? (
-                                    <div className="p-4 text-center text-sm text-muted-foreground">No customers found</div>
-                                ) : (
-                                    filteredClients.map(client => (
-                                        <div
-                                            key={client.loanNumber}
-                                            className={cn(
-                                                "p-3 cursor-pointer hover:bg-muted/50 flex items-center gap-3 transition-colors",
-                                                selectedClient?.loanNumber === client.loanNumber && "bg-primary/5"
-                                            )}
-                                            onClick={() => {
-                                                setSelectedLoanNumber(client.loanNumber);
-                                                setSearchTerm("");
-                                            }}
-                                        >
-                                            <Avatar className="h-8 w-8">
-                                                <AvatarImage src={`https://ui-avatars.com/api/?name=${client.customerName}&background=random`} />
-                                                <AvatarFallback>{client.customerName[0]}</AvatarFallback>
-                                            </Avatar>
-                                            <div>
-                                                <p className="font-medium text-sm">{client.customerName}</p>
-                                                <p className="text-xs text-muted-foreground">{client.loanNumber}</p>
+                    {/* Customer List */}
+                    <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
+                        {filteredClients.length === 0 && !isCollapsed ? (
+                            <div className="p-8 text-center text-muted-foreground">
+                                <p className="text-xs">No customers found</p>
+                            </div>
+                        ) : (
+                            filteredClients.map(client => (
+                                <div
+                                    key={client.loanNumber}
+                                    className={cn(
+                                        "rounded-md cursor-pointer flex items-center transition-all duration-200 group border border-transparent",
+                                        isCollapsed ? "justify-center p-2 mb-2" : "p-3 gap-3 justify-start",
+                                        selectedClient?.loanNumber === client.loanNumber
+                                            ? "bg-primary/5 border-primary/10 shadow-sm relative"
+                                            : "hover:bg-muted/50"
+                                    )}
+                                    onClick={() => setSelectedLoanNumber(client.loanNumber)}
+                                    title={isCollapsed ? client.customerName : undefined}
+                                >
+                                    {/* Selection Indicator for Collapsed Mode */}
+                                    {isCollapsed && selectedClient?.loanNumber === client.loanNumber && (
+                                        <div className="absolute left-0 top-2 bottom-2 w-1 bg-primary rounded-r-full" />
+                                    )}
+
+                                    <Avatar className={cn(
+                                        "border-none shrink-0 transition-all items-center justify-center",
+                                        isCollapsed ? "h-10 w-10 ring-2 ring-primary/20 shadow-md" : "h-8 w-8"
+                                    )}>
+                                        <AvatarFallback className="bg-primary text-primary-foreground font-bold text-[10px]">
+                                            {client.customerName.slice(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                    </Avatar>
+
+                                    {!isCollapsed && (
+                                        <div className="flex-1 min-w-0 fade-in-0 animate-in duration-300">
+                                            <div className="flex justify-between items-center mb-0.5">
+                                                <p className={cn(
+                                                    "font-medium text-xs truncate leading-none",
+                                                    selectedClient?.loanNumber === client.loanNumber ? "text-primary font-semibold" : "text-foreground"
+                                                )}>
+                                                    {client.customerName}
+                                                </p>
+                                                {selectedClient?.loanNumber === client.loanNumber && (
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                                <span className="font-mono">{client.loanNumber}</span>
+                                                <span>•</span>
+                                                <span className="truncate">{client.mobile}</span>
                                             </div>
                                         </div>
-                                    ))
-                                )}
-                            </div>
+                                    )}
+                                </div>
+                            ))
                         )}
-
-                        {selectedClient && (
-                            <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className="text-xs font-bold uppercase text-primary tracking-wider">Selected</span>
-                                    <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground" onClick={() => setSelectedLoanNumber(null)}>
-                                        Change
-                                    </Button>
-                                </div>
-                                <h3 className="font-bold text-lg">{selectedClient.customerName}</h3>
-                                <p className="text-sm text-muted-foreground">{selectedClient.mobile}</p>
-                                <p className="text-sm font-mono mt-1">{selectedClient.loanNumber}</p>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* FILTERS PANEL */}
-                <Card className="md:col-span-8 h-fit">
-                    <SectionHeader icon={Filter} title="Statement Settings" />
-                    <CardContent>
-                        <div className="flex flex-col lg:flex-row gap-6 items-end">
-                            <div className="grid grid-cols-2 gap-4 flex-1 w-full">
-                                <div className="space-y-2">
-                                    <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Start Date</span>
-                                    <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                    <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">End Date</span>
-                                    <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-                                </div>
-                            </div>
-
-                            <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
-                                <Button variant="ghost" className="text-muted-foreground flex-1 lg:flex-none" onClick={() => { setStartDate(""); setEndDate(""); }}>
-                                    Clear
-                                </Button>
-                                <Separator orientation="vertical" className="h-8 hidden lg:block" />
-                                <Button variant="outline" className="flex-1 lg:flex-none" onClick={() => toast.info("PDF Download Started...")}>
-                                    <Download className="mr-2 h-4 w-4" /> PDF
-                                </Button>
-                                <Button onClick={() => handlePrint()} disabled={!selectedClient} className="bg-primary text-primary-foreground shadow-sm flex-1 lg:flex-none">
-                                    <Printer className="mr-2 h-4 w-4" /> Print Statement
-                                </Button>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* STATEMENT PREVIEW (PRINTABLE) */}
-            {selectedClient && statementData && StatementComponent ? (
-                <div className="bg-white p-8 shadow-sm border rounded-xl print:shadow-none print:border-none print:p-0 overflow-auto" ref={componentRef}>
-                    <StatementComponent
-                        data={statementData}
-                        company={companySettings}
-                    />
-
-                    {/* PRINT FOOTER ADDENDUM if needed */}
-                    <div className="hidden print:block mt-8 text-center text-[10px] text-muted-foreground print:text-black/50">
-                        <p>Generated via FinCorp ERP • {new Date().toLocaleString()}</p>
                     </div>
                 </div>
-            ) : (
-                <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-xl border-muted-foreground/20 text-muted-foreground bg-white/50 print:hidden">
-                    <FileText className="h-12 w-12 mb-4 opacity-50" />
-                    <h3 className="text-lg font-semibold">No Customer Selected</h3>
-                    <p>Search and select a customer to view their statement.</p>
-                </div>
-            )}
-        </div>
-    );
-}
-
-function SectionHeader({ icon: Icon, title }: { icon: any, title: string }) {
-    return (
-        <div className="p-6 pb-2 flex items-center gap-2">
-            <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                <Icon className="h-5 w-5" />
             </div>
-            <h3 className="font-semibold tracking-tight">{title}</h3>
+
+            {/* RIGHT PANE: Workspace & Preview */}
+            <div className="flex-1 flex flex-col h-full overflow-hidden bg-zinc-50/50 dark:bg-zinc-900/50 relative">
+
+                {selectedClient ? (
+                    <>
+                        {/* Sticky Header */}
+                        <header className="h-14 border-b bg-background/80 backdrop-blur flex items-center justify-between px-4 md:px-6 shrink-0 z-20 sticky top-0 supports-[backdrop-filter]:bg-background/60">
+                            <div className="flex items-center gap-3">
+                                <div className="flex flex-col">
+                                    <h1 className="font-semibold text-sm leading-none">Statement Preview</h1>
+                                    <p className="text-[10px] text-muted-foreground mt-1">
+                                        {selectedClient.customerName} • <span className="font-mono">{selectedClient.loanNumber}</span>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 md:gap-3">
+                                {/* Template Selector */}
+                                <div className="hidden md:flex items-center bg-muted/40 rounded-md border px-2 h-8">
+                                    <span className="text-[10px] text-muted-foreground mr-2 font-medium uppercase tracking-wider">Template</span>
+                                    <span className="text-xs font-semibold">{selectedTemplateConfig.name}</span>
+                                </div>
+
+                                <Separator orientation="vertical" className="h-6 hidden md:block" />
+
+                                {/* Date Filter (Styled) */}
+                                <div className="flex items-center gap-1 bg-background border rounded-md h-8 px-2 shadow-sm hover:border-sidebar-accent transition-colors">
+                                    <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <input
+                                        type="date"
+                                        className="text-[10px] bg-transparent border-none focus:outline-none w-20 p-0 text-foreground font-medium"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                    />
+                                    <span className="text-muted-foreground text-[10px] mx-1">to</span>
+                                    <input
+                                        type="date"
+                                        className="text-[10px] bg-transparent border-none focus:outline-none w-20 p-0 text-foreground font-medium"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                    />
+                                    {(startDate || endDate) && (
+                                        <button onClick={() => { setStartDate(''); setEndDate('') }} className="ml-1 text-muted-foreground hover:text-red-500">
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    )}
+                                </div>
+
+                                <Button size="sm" className="h-8 gap-1.5 shadow-sm text-xs ml-2" onClick={() => handlePrint()}>
+                                    <Printer className="h-3.5 w-3.5" />
+                                    Print
+                                </Button>
+                            </div>
+                        </header>
+
+                        {/* Scrollable Preview Area */}
+                        <main className="flex-1 overflow-y-auto p-6 md:p-10 flex items-start justify-center">
+                            <div className="w-full max-w-[210mm] transition-all duration-500 ease-in-out animate-in fade-in slide-in-from-bottom-4">
+                                {statementData && StatementComponent && (
+                                    <div className="bg-white shadow-2xl ring-1 ring-black/5 rounded-sm relative group/paper">
+                                        {/* Print Wrapper */}
+                                        <div className="overflow-hidden h-0 w-0 absolute opacity-0 pointer-events-none">
+                                            <div ref={componentRef}>
+                                                <StatementComponent
+                                                    data={statementData}
+                                                    company={companySettings}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Visual Preview */}
+                                        <div className="pointer-events-none select-none group-hover/paper:pointer-events-auto group-hover/paper:select-auto">
+                                            <StatementComponent
+                                                data={statementData}
+                                                company={companySettings}
+                                            />
+                                        </div>
+
+                                        {/* Overlay Checkmark or Action? No, keep it clean */}
+                                    </div>
+                                )}
+                            </div>
+                        </main>
+                    </>
+                ) : (
+                    /* Empty State - Polished */
+                    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                        <div className="w-20 h-20 bg-muted/30 rounded-full flex items-center justify-center mb-6 animate-pulse">
+                            <FileText className="h-10 w-10 text-muted-foreground/40" />
+                        </div>
+                        <h3 className="text-xl font-bold tracking-tight text-foreground">Select a Customer</h3>
+                        <p className="max-w-xs mt-2 text-sm text-muted-foreground leading-relaxed">
+                            Choose a customer from the list to generate, customize, and print their transaction statement.
+                        </p>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

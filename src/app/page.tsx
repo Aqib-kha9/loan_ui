@@ -5,6 +5,7 @@ import { useReactToPrint } from "react-to-print";
 import { useSettings } from "@/components/providers/settings-provider";
 import { TEMPLATE_REGISTRY } from "@/components/templates/registry";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -30,7 +31,10 @@ import {
   FileText,
   Info,
   CreditCard,
-  Banknote
+  Banknote,
+  Plus,
+  X,
+  Trash2
 } from "lucide-react";
 import {
   Select,
@@ -52,11 +56,19 @@ import { cn } from "@/lib/utils";
 export default function QuickPaymentPage() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentMode, setPaymentMode] = useState("cash");
+
+  // Misc State
   const [showReceipt, setShowReceipt] = useState(false);
   const [activeTab, setActiveTab] = useState("ledger");
   const [ledgerHistory, setLedgerHistory] = useState<any[]>([]);
+
+  // Dynamic Payment State
+  const [isSplitMode, setIsSplitMode] = useState(false);
+  const [payments, setPayments] = useState([{ mode: "cash", amount: "" }]);
+
+  // Sidebar Logic
+  const [isSidebarHovered, setIsSidebarHovered] = useState(false);
+  const isCollapsed = !!selectedId && !isSidebarHovered;
 
   // Settings & Templates
   const { companySettings, printTemplate } = useSettings();
@@ -80,7 +92,7 @@ export default function QuickPaymentPage() {
 
   const handleSelectCustomer = (loan: LoanAccount) => {
     setSelectedId(loan.loanNumber);
-    setPaymentAmount(loan.emiAmount.toString());
+    setPayments([{ mode: "cash", amount: loan.emiAmount.toString() }]);
     setActiveTab("ledger"); // Reset tab on switch
     setLedgerHistory(generateLedger(loan));
   };
@@ -89,105 +101,177 @@ export default function QuickPaymentPage() {
     setSelectedId(null);
   };
 
+  const addPaymentRow = () => {
+    setPayments([...payments, { mode: "cash", amount: "" }]);
+  };
+
+  const removePaymentRow = (index: number) => {
+    if (payments.length > 1) {
+      const newPayments = [...payments];
+      newPayments.splice(index, 1);
+      setPayments(newPayments);
+    }
+  };
+
+  const updatePaymentRow = (index: number, field: 'mode' | 'amount', value: string) => {
+    const newPayments = [...payments];
+    newPayments[index] = { ...newPayments[index], [field]: value };
+    setPayments(newPayments);
+  };
+
   const handlePayment = () => {
     if (!selectedLoan) return;
-    const amount = parseFloat(paymentAmount);
-    if (isNaN(amount) || amount <= 0) {
-      toast.error("Invalid amount");
+
+    // Validate all amounts
+    const validPayments = payments.filter(p => !isNaN(parseFloat(p.amount)) && parseFloat(p.amount) > 0);
+
+    if (validPayments.length === 0) {
+      toast.error("Please enter a valid amount");
       return;
     }
 
-    // Add to local ledger
-    const lastBalance = ledgerHistory.length > 0 ? ledgerHistory[ledgerHistory.length - 1].balance : 0;
-    const newEntry = {
-      date: new Date().toISOString(),
-      particulars: `Payment Received (${paymentMode})`,
-      type: 'Repayment',
-      credit: amount,
-      debit: 0,
-      balance: lastBalance - amount, // Assuming credit reduces balance (Loan logic)
-      refNo: `TXN-${Math.floor(Math.random() * 10000)}`
-    };
+    if (validPayments.length !== payments.length) {
+      toast.error("Please complete all payment fields");
+      return;
+    }
 
-    setLedgerHistory([...ledgerHistory, newEntry]);
-    toast.success("Payment Recorded");
+    // Add entries to ledger
+    let runningBalance = ledgerHistory.length > 0 ? ledgerHistory[ledgerHistory.length - 1].balance : 0;
+    const newEntries = validPayments.map((p, index) => {
+      const amount = parseFloat(p.amount);
+      runningBalance -= amount;
+      return {
+        date: new Date().toISOString(),
+        particulars: `Payment Received (${isSplitMode && payments.length > 1 ? `Split ${index + 1} - ` : ''}${p.mode})`,
+        type: 'Repayment',
+        credit: amount,
+        debit: 0,
+        balance: runningBalance,
+        refNo: `TXN-${Math.floor(Math.random() * 10000)}`
+      };
+    });
+
+    setLedgerHistory([...ledgerHistory, ...newEntries]);
+
+    const totalCollected = validPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    toast.success(`Collected ₹${totalCollected.toLocaleString()} via ${validPayments.length} mode${validPayments.length > 1 ? 's' : ''}`);
+
+    // Reset
+    setPayments([{ mode: "cash", amount: "" }]);
+    setIsSplitMode(false);
     setShowReceipt(true);
   };
 
   return (
-    <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-5rem)] flex flex-col md:flex-row bg-white dark:bg-zinc-950 overflow-hidden relative">
+    <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-1rem)] flex flex-col md:flex-row bg-white dark:bg-zinc-950 overflow-hidden relative">
 
       {/* === LEFT PANE: LIST === */}
-      <div className={cn(
-        "w-full md:w-[60px] md:hover:w-[320px] border-r border-border/50 bg-muted/5 flex-col h-full shrink-0 z-20 bg-white dark:bg-zinc-950 transition-[width] duration-500 ease-in-out group/sidebar",
-        selectedId ? "hidden md:flex" : "flex"
-      )}>
+      <div
+        className={cn(
+          "flex-col h-full bg-white dark:bg-zinc-950 border-r z-20 transition-all duration-500 ease-in-out relative group/sidebar shadow-xl md:shadow-none shrink-0",
+          selectedId ? "hidden md:flex" : "flex w-full",
+          isCollapsed ? "md:w-[4.5rem]" : "md:w-[320px]"
+        )}
+        onMouseEnter={() => setIsSidebarHovered(true)}
+        onMouseLeave={() => setIsSidebarHovered(false)}
+      >
 
-        {/* Search Header */}
-        <div className="p-3 md:p-4 border-b border-border/50 bg-white/50 backdrop-blur-md dark:bg-zinc-900/80 sticky top-0 z-10 shrink-0 overflow-hidden whitespace-nowrap">
-          <div className="flex items-center justify-between mb-4 md:mb-6 md:group-hover/sidebar:mb-3 transition-all md:justify-center md:group-hover/sidebar:justify-between">
-            <h2 className="text-sm font-bold tracking-tight flex items-center gap-3 md:gap-0 md:group-hover/sidebar:gap-3 md:w-auto transition-all">
-              <Wallet className="h-5 w-5 text-primary shrink-0" />
-              <span className="md:opacity-0 md:w-0 md:hidden md:group-hover/sidebar:inline-block md:group-hover/sidebar:opacity-100 md:group-hover/sidebar:w-auto transition-all duration-300 overflow-hidden">Collections</span>
-            </h2>
-            <Badge variant="secondary" className="text-[10px] h-5 px-1.5 md:opacity-0 md:hidden md:group-hover/sidebar:inline-flex md:group-hover/sidebar:opacity-100 transition-all">{filteredLoans.length} Due</Badge>
+        {/* Content Container */}
+        <div className="flex flex-col h-full w-full overflow-hidden">
+
+          {/* Search Header */}
+          <div className={cn(
+            "border-b border-border/50 bg-white/50 backdrop-blur-md dark:bg-zinc-900/80 sticky top-0 z-10 shrink-0 transition-all duration-300",
+            isCollapsed ? "p-2 items-center justify-center flex flex-col gap-2" : "p-3 md:p-4"
+          )}>
+            <div className={cn("flex items-center transition-all", isCollapsed ? "justify-center mb-0" : "justify-between mb-4")}>
+              {!isCollapsed && (
+                <h2 className="text-sm font-bold tracking-tight flex items-center gap-2">
+                  <Wallet className="h-5 w-5 text-primary shrink-0" />
+                  <span>Collections</span>
+                </h2>
+              )}
+              {isCollapsed && <Wallet className="h-6 w-6 text-primary shrink-0" />}
+
+              <Badge variant="secondary" className={cn("text-[10px] h-5 px-1.5 transition-all", isCollapsed ? "hidden" : "flex")}>
+                {filteredLoans.length} Due
+              </Badge>
+            </div>
+
+            {/* Search Input */}
+            <div className={cn(
+              "relative group w-full transition-all duration-300 overflow-hidden",
+              isCollapsed ? "h-0 opacity-0" : "h-9 opacity-100"
+            )}>
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="h-9 pl-9 text-sm transition-all shadow-none w-full bg-transparent border-muted-foreground/20 focus-visible:bg-white focus-visible:ring-primary/20"
+                placeholder="Search..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
           </div>
 
-          <div className="relative group w-full flex justify-start items-center md:justify-center md:group-hover/sidebar:justify-start">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors z-10 pointer-events-none md:static md:translate-y-0 md:translate-x-0 md:group-hover/sidebar:absolute md:group-hover/sidebar:left-3 md:group-hover/sidebar:top-1/2 md:group-hover/sidebar:-translate-y-1/2" />
-            <Input
-              className="h-9 pl-9 text-sm transition-all duration-300 ease-out shadow-none
-              w-full bg-transparent border-muted-foreground/20 
-              md:w-[0px] md:opacity-0 md:p-0
-              md:group-hover/sidebar:w-full md:group-hover/sidebar:opacity-100 md:group-hover/sidebar:pl-9 md:group-hover/sidebar:bg-white
-              focus-visible:w-full focus-visible:bg-white focus-visible:ring-primary/20 
-              dark:bg-transparent dark:group-hover:bg-black/20"
-              placeholder="Search..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* Scrollable List */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="divide-y divide-border/30">
-            {filteredLoans.map((loan) => (
-              <button
-                key={loan.loanNumber}
-                onClick={() => handleSelectCustomer(loan)}
-                className={cn(
-                  "w-full flex items-center text-left gap-3 p-3 transition-all hover:bg-muted/50 dark:hover:bg-white/5 md:justify-center md:group-hover/sidebar:justify-start md:p-2 md:group-hover/sidebar:p-3",
-                  selectedId === loan.loanNumber
-                    ? "bg-primary/5 border-l-4 border-l-primary"
-                    : "border-l-4 border-l-transparent pl-[16px]" // Compensate for border width
-                )}
-              >
-                <Avatar className="h-9 w-9 md:h-7 md:w-7 md:group-hover/sidebar:h-9 md:group-hover/sidebar:w-9 border border-primary bg-primary shadow-sm shrink-0 transition-all duration-300">
-                  <AvatarFallback className="flex h-full w-full items-center justify-center text-[10px] font-bold text-primary-foreground bg-primary">
-                    {loan.customerName.substring(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0 z-10 md:opacity-0 md:w-0 md:group-hover/sidebar:opacity-100 md:group-hover/sidebar:w-auto transition-all duration-300 overflow-hidden">
-                  <div className="flex justify-between items-baseline mb-0.5">
-                    <p className={cn("font-bold truncate text-sm transition-colors", selectedId === loan.loanNumber ? "text-primary" : "text-foreground")}>{loan.customerName}</p>
-                    <span className={cn("text-[10px] font-medium px-1.5 py-0 rounded-full flex items-center gap-1", loan.status === 'Active' ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground')}>
-                      {loan.status}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground truncate font-mono tracking-tight opacity-70 mb-1">{loan.loanNumber}</p>
-                  <div className="flex justify-between items-end">
-                    <p className="text-[10px] text-muted-foreground">EMI: ₹{loan.emiAmount}</p>
-                    <p className="text-xs font-bold text-destructive">₹{loan.emiAmount.toLocaleString()}</p>
-                  </div>
+          {/* Scrollable List */}
+          <div className="flex-1 overflow-y-auto scrollbar-thin">
+            <div className="divide-y divide-border/30">
+              {filteredLoans.length === 0 && !isCollapsed && (
+                <div className="p-8 text-center text-muted-foreground">
+                  <p className="text-xs">No customers found</p>
                 </div>
-              </button>
-            ))}
-          </div>
-        </div>
+              )}
 
-        {/* Mobile Safe Area Spacer */}
-        <div className="h-safe-area-bottom md:hidden" />
+              {filteredLoans.map((loan) => (
+                <button
+                  key={loan.loanNumber}
+                  onClick={() => handleSelectCustomer(loan)}
+                  className={cn(
+                    "w-full flex items-center transition-all hover:bg-muted/50 dark:hover:bg-white/5 group",
+                    isCollapsed ? "justify-center p-2 mb-2" : "text-left gap-3 p-3 pl-[16px]",
+                    selectedId === loan.loanNumber
+                      ? (isCollapsed ? "relative" : "bg-primary/5 border-l-4 border-l-primary pl-[12px]")
+                      : (isCollapsed ? "" : "border-l-4 border-l-transparent")
+                  )}
+                  title={isCollapsed ? loan.customerName : undefined}
+                >
+                  {/* Selection Indicator for Collapsed Mode */}
+                  {isCollapsed && selectedId === loan.loanNumber && (
+                    <div className="absolute left-0 top-2 bottom-2 w-1 bg-primary rounded-r-full" />
+                  )}
+
+                  <Avatar className={cn(
+                    "transition-all duration-300 shrink-0 border-none items-center justify-center",
+                    isCollapsed ? "h-10 w-10 ring-2 ring-primary/20 shadow-md" : "h-9 w-9 bg-primary shadow-sm"
+                  )}>
+                    <AvatarFallback className="flex h-full w-full items-center justify-center text-[10px] font-bold text-primary-foreground bg-primary">
+                      {loan.customerName.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+
+                  {!isCollapsed && (
+                    <div className="flex-1 min-w-0 z-10 animate-in fade-in slide-in-from-left-2 duration-300">
+                      <div className="flex justify-between items-baseline mb-0.5">
+                        <p className={cn("font-bold truncate text-sm transition-colors", selectedId === loan.loanNumber ? "text-primary" : "text-foreground")}>{loan.customerName}</p>
+                        <span className={cn("text-[10px] font-medium px-1.5 py-0 rounded-full flex items-center gap-1", loan.status === 'Active' ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground')}>
+                          {loan.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground truncate font-mono tracking-tight opacity-70 mb-1">{loan.loanNumber}</p>
+                      <div className="flex justify-between items-end">
+                        <p className="text-[10px] text-muted-foreground">EMI: ₹{loan.emiAmount}</p>
+                        <p className="text-xs font-bold text-destructive">₹{loan.emiAmount.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Mobile Safe Area Spacer */}
+          <div className="h-safe-area-bottom md:hidden" />
+        </div>
       </div>
 
 
@@ -298,15 +382,9 @@ export default function QuickPaymentPage() {
                           <p className="text-[10px] text-muted-foreground uppercase font-bold mb-0.5">Address</p>
                           <p className="text-sm leading-relaxed text-foreground/80">{selectedLoan.address}</p>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-[10px] text-muted-foreground uppercase font-bold mb-0.5">Mobile</p>
-                            <p className="text-sm font-mono font-medium">{selectedLoan.mobile}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-muted-foreground uppercase font-bold mb-0.5">Guarantor</p>
-                            <p className="text-sm font-medium">{selectedLoan.guarantorName}</p>
-                          </div>
+                        <div>
+                          <p className="text-[10px] text-muted-foreground uppercase font-bold mb-0.5">Mobile</p>
+                          <p className="text-sm font-mono font-medium">{selectedLoan.mobile}</p>
                         </div>
                       </div>
                     </div>
@@ -368,34 +446,90 @@ export default function QuickPaymentPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 bg-muted/40 p-1 pr-1.5 pl-2 rounded-md border ring-1 ring-black/5 focus-within:ring-primary/20 transition-all flex-1 md:flex-none justify-end">
+              <div className="flex items-center gap-2 flex-1 justify-end">
 
-                <Select value={paymentMode} onValueChange={setPaymentMode}>
-                  <SelectTrigger className="h-7 w-[110px] text-xs font-medium border-none bg-transparent shadow-none focus:ring-0 px-2 text-muted-foreground mr-2">
-                    <SelectValue placeholder="Mode" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="upi">UPI</SelectItem>
-                    <SelectItem value="bank">Bank Transfer</SelectItem>
-                    <SelectItem value="cheque">Cheque</SelectItem>
-                    <SelectItem value="netbanking">Net Banking</SelectItem>
-                    <SelectItem value="wallet">Wallet</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="h-4 w-[1px] bg-border mr-2" />
+                {/* SPLIT TOGGLE */}
+                <div className="flex items-center gap-2 mr-2">
+                  <label htmlFor="split-mode" className="text-xs font-bold text-muted-foreground cursor-pointer select-none">Split</label>
+                  <Switch
+                    id="split-mode"
+                    checked={isSplitMode}
+                    onCheckedChange={(checked) => {
+                      setIsSplitMode(checked);
+                      if (!checked && payments.length > 1) {
+                        setPayments([payments[0]]);
+                      }
+                    }}
+                    className="scale-75"
+                  />
+                </div>
 
-                <span className="text-muted-foreground font-bold text-sm">₹</span>
-                <Input
-                  className="border-none bg-transparent shadow-none w-full md:w-[80px] text-base font-bold p-0 focus-visible:ring-0 h-7"
-                  placeholder="0"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                />
-                <div className="h-4 w-[1px] bg-border mx-1" />
-                <Button size="sm" className="h-7 px-3 text-xs font-bold shadow-sm" onClick={handlePayment}>
-                  Collect
-                </Button>
+                <div className={cn(
+                  "flex gap-2 bg-muted/40 p-1 pr-1.5 pl-2 rounded-md border ring-1 ring-black/5 focus-within:ring-primary/20 transition-all flex-1 md:flex-none justify-end",
+                  isSplitMode ? "flex-col items-end h-auto gap-1" : "items-center"
+                )}>
+
+                  {payments.map((payment, index) => {
+                    // If not split mode, only show first
+                    if (!isSplitMode && index > 0) return null;
+
+                    return (
+                      <div key={index} className="flex items-center w-full justify-end animate-in slide-in-from-right-2 duration-300">
+                        {isSplitMode && index > 0 && <div className="h-[1px] w-full bg-border/50 absolute top-0" />}
+
+                        {/* Mode Select */}
+                        <Select
+                          value={payment.mode}
+                          onValueChange={(val) => updatePaymentRow(index, 'mode', val)}
+                        >
+                          <SelectTrigger className="h-7 w-[110px] text-xs font-medium border-none bg-transparent shadow-none focus:ring-0 px-2 text-muted-foreground mr-2">
+                            <SelectValue placeholder="Mode" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="cash">Cash</SelectItem>
+                            <SelectItem value="upi">UPI</SelectItem>
+                            <SelectItem value="bank">Bank Transfer</SelectItem>
+                            <SelectItem value="cheque">Cheque</SelectItem>
+                            <SelectItem value="wallet">Wallet</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <div className="h-4 w-[1px] bg-border mr-2" />
+                        <span className="text-muted-foreground font-bold text-sm">₹</span>
+
+                        {/* Amount Input */}
+                        <Input
+                          className="border-none bg-transparent shadow-none w-full md:w-[80px] text-base font-bold p-0 focus-visible:ring-0 h-7 text-right"
+                          placeholder="0"
+                          value={payment.amount}
+                          onChange={(e) => updatePaymentRow(index, 'amount', e.target.value)}
+                        />
+
+                        {/* Remove Button (Only for Split Mode & >1 Row) */}
+                        {isSplitMode && payments.length > 1 && (
+                          <Button size="icon" variant="ghost" className="h-6 w-6 ml-1 text-muted-foreground hover:text-destructive shrink-0" onClick={() => removePaymentRow(index)}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Actions Row */}
+                  <div className={cn("flex items-center gap-2", isSplitMode ? "w-full justify-between mt-1 pt-1 border-t border-dashed border-border/50" : "")}>
+                    {isSplitMode && (
+                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] gap-1 text-primary hover:text-primary/80 -ml-1" onClick={addPaymentRow}>
+                        <Plus className="h-3 w-3" /> Add Mode
+                      </Button>
+                    )}
+
+                    {!isSplitMode && <div className="h-4 w-[1px] bg-border mx-1" />}
+
+                    <Button size="sm" className={cn("text-xs font-bold shadow-sm", isSplitMode ? "ml-auto h-7 px-4" : "h-7 px-3")} onClick={handlePayment}>
+                      Collect {isSplitMode && "All"}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </>
@@ -445,8 +579,8 @@ export default function QuickPaymentPage() {
                       data={{
                         customerName: selectedLoan?.customerName || '',
                         loanAccountNo: selectedLoan?.loanNumber || '',
-                        amount: paymentAmount,
-                        paymentMode: paymentMode,
+                        amount: payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toString(),
+                        paymentMode: payments.map(p => p.mode.toUpperCase()).join(' + '),
                       }}
                       company={companySettings}
                     />

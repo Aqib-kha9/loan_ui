@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { BlendedSidebar } from "@/components/layout/BlendedSidebar";
-import { ModeToggle } from "@/components/ui/mode-toggle";
+
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { SettingsProvider } from "@/components/providers/settings-provider";
@@ -38,15 +38,7 @@ export default function RootLayout({
                 {/* This div creates the 'Paper Card' effect */}
                 <div className="flex-1 flex flex-col bg-background md:rounded-tl-3xl md:my-2 md:mr-2 md:ml-1 overflow-hidden shadow-2xl ring-1 ring-black/5 relative transition-colors duration-500">
                   {/* Header inside the sheet */}
-                  <header className="h-16 flex items-center justify-between px-8 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b sticky top-0 z-10 shrink-0">
-                    <div className="flex flex-col">
-                      <h1 className="text-lg font-bold text-foreground leading-none tracking-tight">Workspace</h1>
-                      <p className="text-xs text-muted-foreground mt-1">Manage your financial operations</p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <ModeToggle />
-                    </div>
-                  </header>
+
 
                   <main className="flex-1 overflow-y-auto p-0 scroll-smooth bg-muted/20">
                     <div className="p-6 md:p-8 max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-3 duration-500">

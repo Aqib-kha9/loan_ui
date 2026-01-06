@@ -41,11 +41,11 @@ const collectionData = [
     { name: "Dec", value: 65 },
 ];
 
-const loanTypeData = [
-    { name: "Personal", value: 45, color: "var(--chart-1)" },
-    { name: "Business", value: 30, color: "var(--chart-2)" },
-    { name: "Vehicle", value: 15, color: "var(--chart-3)" },
-    { name: "Mortgage", value: 10, color: "var(--chart-4)" },
+const loanStatusData = [
+    { name: "Active", value: 65, color: "var(--chart-1)" },
+    { name: "Closed", value: 25, color: "var(--chart-2)" },
+    { name: "Pending", value: 5, color: "var(--chart-3)" },
+    { name: "NPA", value: 5, color: "var(--chart-4)" },
 ];
 
 const recentActivity = [
@@ -148,35 +148,35 @@ function ActionTile({
 
 export default function DashboardPage() {
     return (
-        <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-5rem)] bg-muted/10 flex flex-col overflow-hidden">
+        <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-1rem)] bg-muted/10 flex flex-col overflow-hidden">
 
             {/* === 1. STICKY HEADER === */}
-            <div className="h-13 md:h-14 border-b border-border/50 flex items-center justify-between px-4 bg-white/95 backdrop-blur-xl shrink-0 dark:bg-zinc-950/95 sticky top-0 z-30">
-                <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/10 flex items-center justify-center text-primary shadow-sm">
-                        <Activity className="h-4 w-4" />
+            <div className="h-12 md:h-16 border-b border-border/50 flex items-center justify-between px-6 bg-white/95 backdrop-blur-xl shrink-0 dark:bg-zinc-950/95 sticky top-0 z-30">
+                <div className="flex items-center gap-4">
+                    <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/10 flex items-center justify-center text-primary shadow-sm">
+                        <Activity className="h-5 w-5" />
                     </div>
                     <div>
-                        <h1 className="text-sm font-bold leading-none tracking-tight">Dashboard</h1>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">Overview & Analytics</p>
+                        <h1 className="text-lg font-bold leading-none tracking-tight">Dashboard</h1>
+                        <p className="text-xs text-muted-foreground mt-1 font-medium">Overview & Analytics</p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                     <Link href="/statements">
-                        <Button variant="ghost" size="sm" className="h-8 gap-2 text-xs font-semibold text-muted-foreground hidden md:flex">
-                            <FileText className="h-3.5 w-3.5" /> Reports
+                        <Button variant="ghost" className="h-9 gap-2 text-xs font-semibold text-muted-foreground hidden md:flex hover:bg-muted/50">
+                            <FileText className="h-4 w-4" /> Reports
                         </Button>
                     </Link>
-                    <div className="h-4 w-[1px] bg-border mx-1 hidden md:block" />
+                    <div className="h-5 w-[1px] bg-border mx-1 hidden md:block" />
                     <Link href="/clients">
-                        <Button variant="outline" size="sm" className="h-8 gap-2 text-xs font-bold border-dashed hidden sm:flex">
-                            <Users className="h-3.5 w-3.5" /> Add Client
+                        <Button variant="outline" className="h-9 gap-2 text-xs font-bold border-dashed hidden sm:flex">
+                            <Users className="h-4 w-4" /> Add Client
                         </Button>
                     </Link>
                     <Link href="/loans/new">
-                        <Button size="sm" className="h-8 gap-2 text-xs font-bold shadow-md shadow-primary/20">
-                            <Briefcase className="h-3.5 w-3.5" /> New Disbursal
+                        <Button className="h-9 gap-2 text-xs font-bold shadow-md shadow-primary/20 hover:shadow-lg transition-all">
+                            <Briefcase className="h-4 w-4" /> New Disbursal
                         </Button>
                     </Link>
                 </div>
@@ -251,16 +251,16 @@ export default function DashboardPage() {
                         </div>
                     </div>
 
-                    {/* Portfolio Mix */}
+                    {/* Portfolio Status */}
                     <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 dark:bg-zinc-900/50 dark:ring-white/10">
-                        <h3 className="font-semibold text-sm mb-0.5">Portfolio Mix</h3>
-                        <p className="text-[10px] text-muted-foreground mb-4">Distribution by loan type</p>
+                        <h3 className="font-semibold text-sm mb-0.5">Portfolio Status</h3>
+                        <p className="text-[10px] text-muted-foreground mb-4">Distribution by status</p>
 
                         <div className="h-[160px] relative">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
-                                    <Pie data={loanTypeData} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={4} dataKey="value" stroke="none">
-                                        {loanTypeData.map((entry, index) => (
+                                    <Pie data={loanStatusData} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={4} dataKey="value" stroke="none">
+                                        {loanStatusData.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.color} />
                                         ))}
                                     </Pie>
@@ -275,7 +275,7 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="mt-4 space-y-2">
-                            {loanTypeData.map((item, i) => (
+                            {loanStatusData.map((item, i) => (
                                 <div key={i} className="flex items-center justify-between text-xs">
                                     <div className="flex items-center gap-2">
                                         <div className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />

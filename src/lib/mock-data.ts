@@ -16,6 +16,7 @@ export type LoanAccount = {
   disbursedDate: string;
   emiAmount: number;
   interestRate: number; 
+  interestPaidInAdvance?: boolean; // New
   tenureMonths: number;
   emisPaid: number;
   status: "Active" | "Closed" | "NPA";

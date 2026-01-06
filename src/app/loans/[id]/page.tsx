@@ -246,13 +246,14 @@ export default function LoanLedgerPage() {
 
                 {/* Hidden Print Component */}
                 <div className="overflow-hidden h-0 w-0 absolute opacity-0 pointer-events-none">
-                    {StatementComponent && (
-                        <StatementComponent
-                            ref={componentRef}
-                            data={statementData}
-                            company={companySettings}
-                        />
-                    )}
+                    <div ref={componentRef}>
+                        {StatementComponent && (
+                            <StatementComponent
+                                data={statementData}
+                                company={companySettings}
+                            />
+                        )}
+                    </div>
                 </div>
 
                 {/* Bottom Spacer */}
