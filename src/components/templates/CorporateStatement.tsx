@@ -38,7 +38,7 @@ export const CorporateStatement = ({ data, company }: StatementProps) => {
                 </div>
                 <div className="text-right text-xs text-slate-600">
                     <p className="font-bold">{company.address}</p>
-                    <p>GSTIN: {company.gstin}</p>
+
                     <p>Support: {company.email}</p>
                 </div>
             </header>
@@ -150,7 +150,22 @@ export const CorporateStatement = ({ data, company }: StatementProps) => {
                 </div>
                 <div className="text-right">
                     {company.showSignatory && (
-                        <p className="font-bold uppercase text-slate-800">{company.signatoryText || "Authorized Signatory"}</p>
+                        <>
+                            {(() => {
+                                const fullText = company.signatoryText || "Authorized Signatory";
+                                const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                                if (match) {
+                                    return (
+                                        <>
+                                            <p className="font-bold uppercase text-slate-800">{match[1]}</p>
+                                            <p className="font-medium uppercase text-slate-700 mt-1">{match[2]}</p>
+                                        </>
+                                    );
+                                }
+                                return <p className="font-bold uppercase text-slate-800">{fullText}</p>;
+                            })()}
+
+                        </>
                     )}
                 </div>
             </div>

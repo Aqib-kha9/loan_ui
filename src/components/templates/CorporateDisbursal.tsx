@@ -45,7 +45,7 @@ export const CorporateDisbursal = React.forwardRef<HTMLDivElement, DisbursementR
 
                     <div className="opacity-80 text-sm">
                         <p className="mb-2 text-xs font-medium uppercase tracking-widest text-[#94a3b8]">Reg. Details</p>
-                        <p>GSTIN: {company.gstin}</p>
+
                     </div>
                 </div>
 
@@ -141,7 +141,20 @@ export const CorporateDisbursal = React.forwardRef<HTMLDivElement, DisbursementR
                     <div className="text-right">
                         {company.showSignatory && (
                             <>
-                                <p className="font-bold text-[#1e293b] uppercase text-sm mb-1">{company.signatoryText || "Authorized Signatory"}</p>
+                                {(() => {
+                                    const fullText = company.signatoryText || "Authorized Signatory";
+                                    const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                                    if (match) {
+                                        return (
+                                            <>
+                                                <p className="font-bold text-[#1e293b] uppercase text-sm mb-1">{match[1]}</p>
+                                                <p className="font-medium text-[#1e293b] text-xs mb-1">{match[2]}</p>
+                                            </>
+                                        );
+                                    }
+                                    return <p className="font-bold text-[#1e293b] uppercase text-sm mb-1">{fullText}</p>;
+                                })()}
+
                             </>
                         )}
                     </div>

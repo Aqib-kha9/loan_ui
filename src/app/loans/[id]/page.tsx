@@ -183,7 +183,7 @@ export default function LoanLedgerPage() {
                                     <TableBody>
                                         {ledgerEntries.map((entry, index) => (
                                             <TableRow key={index} className="hover:bg-muted/5 text-xs group">
-                                                <TableCell className="font-mono text-muted-foreground h-10 py-1">{entry.date}</TableCell>
+                                                <TableCell className="font-mono text-muted-foreground h-10 py-1">{new Date(entry.date).toLocaleDateString('en-GB')}</TableCell>
                                                 <TableCell className="font-medium h-10 py-1">
                                                     <div className="flex flex-col">
                                                         <span>{entry.particulars}</span>

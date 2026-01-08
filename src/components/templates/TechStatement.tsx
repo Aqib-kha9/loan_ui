@@ -119,7 +119,21 @@ export const TechStatement = ({ data, company }: StatementProps) => {
                     <span>TOT_PAID: {Number(data.totalPaid).toFixed(2)}</span>
                 </div>
                 {company.showSignatory && (
-                    <p className="mt-4 border border-[#00ff41] inline-block px-4 py-1">{company.signatoryText || "AUTHORIZED_KEY"}</p>
+                    <>
+                        {(() => {
+                            const fullText = company.signatoryText || "AUTHORIZED_KEY";
+                            const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                            if (match) {
+                                return (
+                                    <div className="mt-4 border border-[#00ff41] inline-block px-4 py-1 text-right">
+                                        <p className="font-bold">{match[1]}</p>
+                                        <p className="opacity-70 text-xs">{match[2]}</p>
+                                    </div>
+                                );
+                            }
+                            return <p className="mt-4 border border-[#00ff41] inline-block px-4 py-1">{fullText}</p>;
+                        })()}
+                    </>
                 )}
             </div>
         </div>

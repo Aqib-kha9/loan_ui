@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { useReactToPrint } from "react-to-print";
+import { logActivity } from "@/lib/activity-logger";
 import { useSettings } from "@/components/providers/settings-provider";
 import { TEMPLATE_REGISTRY } from "@/components/templates/registry";
 import { Input } from "@/components/ui/input";
@@ -66,6 +67,7 @@ export default function QuickPaymentPage() {
   const [isSplitMode, setIsSplitMode] = useState(false);
   const [payments, setPayments] = useState([{ mode: "cash", amount: "" }]);
   const [narrative, setNarrative] = useState(""); // New: Custom Particulars
+  const [contributionDate, setContributionDate] = useState(new Date().toISOString().split("T")[0]); // New: Backdated Payment Logic Check
 
   // Sidebar Logic
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
@@ -151,7 +153,7 @@ export default function QuickPaymentPage() {
       }
 
       return {
-        date: new Date().toISOString(),
+        date: new Date(contributionDate).toISOString(),
         particulars: entryParticulars,
         type: 'Repayment',
         credit: amount,
@@ -164,6 +166,18 @@ export default function QuickPaymentPage() {
     setLedgerHistory([...ledgerHistory, ...newEntries]);
 
     const totalCollected = validPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
+    // Log Activity
+    logActivity({
+      type: 'Payment',
+      title: 'Payment Received',
+      entityName: selectedLoan.customerName,
+      amount: totalCollected,
+      action: 'Received',
+      description: `Received ₹${totalCollected.toLocaleString()} from ${selectedLoan.customerName} via ${validPayments.map(p => p.mode).join(', ')}.`,
+      user: 'Admin User'
+    });
+
     toast.success(`Collected ₹${totalCollected.toLocaleString()} via ${validPayments.length} mode${validPayments.length > 1 ? 's' : ''}`);
 
     // Reset
@@ -348,7 +362,7 @@ export default function QuickPaymentPage() {
                       <tbody className="divide-y divide-border/30 bg-white dark:bg-zinc-950">
                         {ledgerHistory.map((entry, idx) => (
                           <tr key={idx} className="hover:bg-muted/5 transition-colors group">
-                            <td className="px-4 py-3 font-mono text-muted-foreground/80">{new Date(entry.date).toLocaleDateString()}</td>
+                            <td className="px-4 py-3 font-mono text-muted-foreground/80">{new Date(entry.date).toLocaleDateString('en-GB')}</td>
                             <td className="px-4 py-3">
                               <div className="font-semibold text-foreground/90 truncate max-w-[250px]">{entry.particulars}</div>
                               {entry.type === 'EMI' && <div className="text-[10px] text-muted-foreground mt-0.5 font-mono opacity-70">Ref: {entry.refNo || `TXN-${idx}`}</div>}
@@ -479,6 +493,17 @@ export default function QuickPaymentPage() {
                   "flex gap-2 bg-muted/40 p-1 pr-1.5 pl-2 rounded-md border ring-1 ring-black/5 focus-within:ring-primary/20 transition-all flex-1 md:flex-none justify-end",
                   isSplitMode ? "flex-col items-end h-auto gap-1" : "items-center"
                 )}>
+
+                  {/* Payment Date (Backdated) */}
+                  <div className="flex items-center gap-1 mr-2">
+                    <Input
+                      type="date"
+                      className="h-7 text-xs border-transparent bg-transparent hover:bg-white/50 focus:bg-white focus:border-input transition-colors w-[110px] p-0 px-2"
+                      value={contributionDate}
+                      onChange={(e) => setContributionDate(e.target.value)}
+                    />
+                    {!isSplitMode && <div className="h-4 w-[1px] bg-border mx-1" />}
+                  </div>
 
                   {/* Narrative Input (New) */}
                   <div className={cn("w-full md:w-auto flex items-center transition-all", isSplitMode ? "w-full mb-1" : "mr-2")}>

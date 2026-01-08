@@ -41,7 +41,7 @@ export const TechDisbursal = React.forwardRef<HTMLDivElement, DisbursementReceip
                     </div>
                 </div>
                 <div className="text-right text-xs">
-                    <p>DATE: {new Date(data.disbursedDate).toLocaleDateString()}</p>
+                    <p>DATE: {new Date(data.disbursedDate).toLocaleDateString('en-GB')}</p>
                     <p>REF: {data.loanAccountNo}</p>
                 </div>
             </div>
@@ -113,7 +113,19 @@ export const TechDisbursal = React.forwardRef<HTMLDivElement, DisbursementReceip
                     <div className="text-right">
                         {company.showSignatory && (
                             <>
-                                <p className="mb-4 text-[#00ff41] border border-[#00ff41] px-2 py-1 inline-block">{company.signatoryText || "AUTHORIZED_KEY"}</p>
+                                {(() => {
+                                    const fullText = company.signatoryText || "AUTHORIZED_KEY";
+                                    const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                                    if (match) {
+                                        return (
+                                            <div className="mb-4 text-[#00ff41] border border-[#00ff41] px-2 py-1 inline-block text-right">
+                                                <p className="font-bold">{match[1]}</p>
+                                                <p className="opacity-70 text-xs">{match[2]}</p>
+                                            </div>
+                                        );
+                                    }
+                                    return <p className="mb-4 text-[#00ff41] border border-[#00ff41] px-2 py-1 inline-block">{fullText}</p>;
+                                })()}
                                 <p>ISSUER_AUTH</p>
                             </>
                         )}

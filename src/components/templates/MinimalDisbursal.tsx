@@ -38,7 +38,7 @@ export const MinimalDisbursal = React.forwardRef<HTMLDivElement, DisbursementRec
                 </div>
                 <div className="text-right text-xs text-gray-400">
                     <p>{company.address}</p>
-                    <p>GST: {company.gstin}</p>
+
                 </div>
             </div>
 
@@ -118,7 +118,24 @@ export const MinimalDisbursal = React.forwardRef<HTMLDivElement, DisbursementRec
                     <p className="mb-2 text-black">Borrower Sign</p>
                 </div>
                 <div>
-                    {company.showSignatory && <p className="mb-2 text-black text-right">{company.signatoryText || "Authorized Signatory"}</p>}
+                    {company.showSignatory && (
+                        <>
+                            {(() => {
+                                const fullText = company.signatoryText || "Authorized Signatory";
+                                const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                                if (match) {
+                                    return (
+                                        <>
+                                            <p className="mb-1 text-black text-right">{match[1]}</p>
+                                            <p className="mb-2 text-gray-500 text-right font-medium">{match[2]}</p>
+                                        </>
+                                    );
+                                }
+                                return <p className="mb-2 text-black text-right">{fullText}</p>;
+                            })()}
+
+                        </>
+                    )}
                 </div>
             </div>
             <div className="flex justify-between text-[10px] text-gray-300 mt-4">

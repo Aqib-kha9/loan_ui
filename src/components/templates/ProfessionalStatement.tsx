@@ -129,7 +129,22 @@ export const ProfessionalStatement = React.forwardRef<HTMLDivElement, StatementP
                     <p>{company.computerGeneratedText || "This is a an electronically generated report."}</p>
                 )}
                 {company.showSignatory && (
-                    <p className="mt-2 text-slate-700 font-bold">{company.signatoryText || "Authorized Signatory"}</p>
+                    <>
+                        {(() => {
+                            const fullText = company.signatoryText || "Authorized Signatory";
+                            const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                            if (match) {
+                                return (
+                                    <>
+                                        <p className="mt-4 text-slate-700 font-bold uppercase">{match[1]}</p>
+                                        <p className="font-medium text-slate-600 font-xs">{match[2]}</p>
+                                    </>
+                                );
+                            }
+                            return <p className="mt-4 text-slate-700 font-bold uppercase">{fullText}</p>;
+                        })()}
+
+                    </>
                 )}
                 <p className="mt-2">{company.email} | {company.mobile}</p>
             </div>

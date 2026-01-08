@@ -6,7 +6,7 @@ export interface CompanySettings {
     name: string;
     tagline: string;
     address: string;
-    gstin: string;
+
     mobile: string;
     email: string;
     logoUrl: string; // For now just a placeholder URL or base64
@@ -35,7 +35,7 @@ const defaultCompany: CompanySettings = {
     name: "Patni Finance",
     tagline: "Trusted Financial Partner",
     address: "123, Market Road, City Center, Mumbai - 400001",
-    gstin: "27ABCDE1234F1Z5",
+
     mobile: "+91 98765 43210",
     email: "support@apnafinance.com",
     logoUrl: "https://placehold.co/400x200?text=Patni+Finance",

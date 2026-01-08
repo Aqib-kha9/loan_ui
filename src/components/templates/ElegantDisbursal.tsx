@@ -129,8 +129,21 @@ export const ElegantDisbursal = React.forwardRef<HTMLDivElement, DisbursementRec
                     <div className="text-center">
                         {company.showSignatory && (
                             <>
-                                <p className="text-sm font-bold mb-1">{company.signatoryText || "Authorized Signatory"}</p>
+                                {(() => {
+                                    const fullText = company.signatoryText || "Authorized Signatory";
+                                    const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                                    if (match) {
+                                        return (
+                                            <>
+                                                <p className="text-sm font-bold mb-1">{match[1]}</p>
+                                                <p className="text-xs font-medium text-gray-600 mb-2">{match[2]}</p>
+                                            </>
+                                        );
+                                    }
+                                    return <p className="text-sm font-bold mb-1">{fullText}</p>;
+                                })()}
                                 <div className="w-32 border-b border-gray-400 mb-1"></div>
+
                             </>
                         )}
                     </div>

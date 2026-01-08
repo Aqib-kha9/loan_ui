@@ -129,8 +129,20 @@ export const ProfessionalDisbursal = React.forwardRef<HTMLDivElement, Disburseme
                     <div>
                         {company.showSignatory && (
                             <>
-                                <p className="font-bold text-[#2c3e50] text-sm mb-1 text-right">{company.signatoryText || "Authorized Signatory"}</p>
-                                <p className="text-xs text-gray-400 text-right">For {company.name}</p>
+                                {(() => {
+                                    const fullText = company.signatoryText || "Authorized Signatory";
+                                    const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                                    if (match) {
+                                        return (
+                                            <>
+                                                <p className="font-bold text-[#2c3e50] text-sm mb-1 text-right">{match[1]}</p>
+                                                <p className="font-medium text-[#2c3e50] text-xs mb-1 text-right">{match[2]}</p>
+                                            </>
+                                        );
+                                    }
+                                    return <p className="font-bold text-[#2c3e50] text-sm mb-1 text-right">{fullText}</p>;
+                                })()}
+
                             </>
                         )}
                     </div>

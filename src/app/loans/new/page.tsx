@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { logActivity } from "@/lib/activity-logger";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -105,6 +106,7 @@ export default function NewLoanPage() {
         paymentModes: [
             { type: "Cash", amount: "", reference: "" }
         ],
+        indefiniteTenure: false, // New field
     });
 
     const [calculations, setCalculations] = useState({
@@ -128,7 +130,7 @@ export default function NewLoanPage() {
             R = R * 12;
         }
 
-        if (P > 0 && R > 0 && N > 0) {
+        if (P > 0 && R > 0 && (N > 0 || formData.indefiniteTenure)) {
             let emi = 0;
             let totalInterest = 0;
             let totalPayable = 0;
@@ -172,6 +174,14 @@ export default function NewLoanPage() {
                 netDisbursal -= firstMonthInterest;
             }
 
+            // Handle Indefinite Tenure
+            if (formData.loanScheme === "InterestOnly" && formData.indefiniteTenure) {
+                // If indefinite, Total Interest and Payble are undefined/infinite in reality
+                // We keep them as 0 or handle display logic in UI
+                totalInterest = 0;
+                totalPayable = 0;
+            }
+
             setCalculations({
                 emi: Math.round(emi),
                 totalInterest: Math.round(totalInterest),
@@ -183,7 +193,7 @@ export default function NewLoanPage() {
         } else {
             setCalculations({ emi: 0, totalInterest: 0, totalPayable: 0, processingFeeAmount: 0, netDisbursal: 0, firstMonthInterest: 0 });
         }
-    }, [formData.loanAmount, formData.interestRate, formData.tenureMonths, formData.processingFeePercent, formData.interestType, formData.interestRateUnit, formData.loanScheme, formData.interestPaidInAdvance]);
+    }, [formData.loanAmount, formData.interestRate, formData.tenureMonths, formData.processingFeePercent, formData.interestType, formData.interestRateUnit, formData.loanScheme, formData.interestPaidInAdvance, formData.indefiniteTenure]);
 
     const handleChange = (field: string, value: string) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -217,6 +227,18 @@ export default function NewLoanPage() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Log Activity
+        logActivity({
+            type: 'Loan',
+            title: 'Loan Disbursed',
+            entityName: `${formData.firstName} ${formData.lastName}`,
+            amount: -parseInt(formData.loanAmount || '0'), // Negative for Money Out
+            action: 'Disbursed',
+            description: `Loan created for ${formData.firstName} ${formData.lastName} (₹${parseInt(formData.loanAmount || '0').toLocaleString()}).`,
+            user: 'Admin User'
+        });
+
         console.log("Submitting Loan Application:", { ...formData, ...calculations });
         toast.success(`Loan Application for ${formData.firstName} submitted successfully!`);
         setShowReceipt(true);
@@ -409,11 +431,26 @@ export default function NewLoanPage() {
                                     <Input
                                         type="number"
                                         className="h-10"
-                                        placeholder="Ex. 12"
-                                        value={formData.tenureMonths}
+                                        placeholder={formData.indefiniteTenure ? "Indefinite / No Fixed Tenure" : "Ex. 12"}
+                                        value={formData.indefiniteTenure ? "" : formData.tenureMonths}
                                         onChange={e => handleChange("tenureMonths", e.target.value)}
+                                        disabled={formData.indefiniteTenure}
+                                        required={!formData.indefiniteTenure}
                                     />
                                 </div>
+
+                                {formData.loanScheme === 'InterestOnly' && (
+                                    <div className="sm:col-span-2 flex items-center space-x-2 mt-[-10px] mb-2">
+                                        <input
+                                            id="indefinite-tenure"
+                                            type="checkbox"
+                                            className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-primary accent-primary"
+                                            checked={formData.indefiniteTenure}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, indefiniteTenure: e.target.checked, tenureMonths: e.target.checked ? "0" : prev.tenureMonths }))}
+                                        />
+                                        <Label htmlFor="indefinite-tenure" className="text-sm cursor-pointer text-muted-foreground">No Fixed Tenure (Indefinite Duration)</Label>
+                                    </div>
+                                )}
 
                                 <div className="space-y-2">
                                     <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Interest Type</Label>
@@ -593,7 +630,9 @@ export default function NewLoanPage() {
                                         </div>
                                         <div className="flex justify-between text-sm">
                                             <span className="text-primary-foreground/70">Total Interest</span>
-                                            <span className="font-semibold text-emerald-200">+ ₹{calculations.totalInterest.toLocaleString()}</span>
+                                            <span className="font-semibold text-emerald-200">
+                                                {formData.indefiniteTenure ? 'Variable / Indefinite' : `+ ₹${calculations.totalInterest.toLocaleString()}`}
+                                            </span>
                                         </div>
                                         <div className="flex justify-between text-sm">
                                             <span className="text-primary-foreground/70">Processing Fee</span>
@@ -616,7 +655,8 @@ export default function NewLoanPage() {
 
                                     <div className="flex justify-between items-center text-xs text-primary-foreground/50 px-1">
                                         <span>Total Payable Amount</span>
-                                        <span>₹{calculations.totalPayable.toLocaleString()}</span>
+                                        <span>Total Payable Amount</span>
+                                        <span>{formData.indefiniteTenure ? 'Principal + Monthly Int.' : `₹${calculations.totalPayable.toLocaleString()}`}</span>
                                     </div>
 
                                     <Button

@@ -21,8 +21,7 @@ export const ClassicTemplate = ({ data, company }: ReceiptProps) => {
                 <h1 className="text-5xl font-bold uppercase tracking-wider mb-4">{company.name}</h1>
                 <p className="text-lg font-medium">{company.address}</p>
                 <div className="flex justify-center gap-4 text-sm mt-2">
-                    <span>GSTIN: {company.gstin}</span>
-                    <span>|</span>
+
                     <span>Mob: {company.mobile}</span>
                 </div>
             </div>

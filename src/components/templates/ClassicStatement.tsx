@@ -37,8 +37,7 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
                     <p className="text-sm font-bold uppercase">{company.tagline}</p>
                     <p className="text-sm mt-1">{company.address}</p>
                     <div className="flex justify-end gap-4 text-xs font-bold mt-2">
-                        <span>GSTIN: {company.gstin}</span>
-                        <span>|</span>
+
                         <span>CONTACT: {company.mobile}</span>
                     </div>
                 </div>
@@ -194,7 +193,20 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
                         <div className="h-20 mb-2 flex items-end justify-center pb-2">
                             <span className="text-gray-400 text-xs">[Stamp / Seal]</span>
                         </div>
-                        <div className="border-t border-black pt-2 font-bold text-sm">{company.signatoryText || "Authorized Signatory"}</div>
+                        {(() => {
+                            const fullText = company.signatoryText || "Authorized Signatory";
+                            const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                            if (match) {
+                                return (
+                                    <>
+                                        <div className="border-t border-black pt-2 font-bold text-sm">{match[1]}</div>
+                                        <div className="font-medium text-xs mt-1">{match[2]}</div>
+                                    </>
+                                );
+                            }
+                            return <div className="border-t border-black pt-2 font-bold text-sm">{fullText}</div>;
+                        })()}
+
                     </div>
                 </div>
             )}

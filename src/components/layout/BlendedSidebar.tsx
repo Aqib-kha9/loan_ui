@@ -17,7 +17,8 @@ import {
     ChevronRight,
     ArrowUpRight,
     PanelLeftClose,
-    PanelLeftOpen
+    PanelLeftOpen,
+    Activity // New Icon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -29,6 +30,7 @@ const navItems = [
     { title: "Loan Portfolio", href: "/loans", icon: PieChart },
     { title: "Statements", href: "/statements", icon: FileText },
     { title: "Customers", href: "/clients", icon: Users },
+    { title: "Activity", href: "/activity", icon: Activity }, // New Link
     { title: "Settings", href: "/settings", icon: Settings },
 ];
 

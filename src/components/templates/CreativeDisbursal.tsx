@@ -105,8 +105,21 @@ export const CreativeDisbursal = React.forwardRef<HTMLDivElement, DisbursementRe
                     <div className="text-right">
                         {company.showSignatory && (
                             <>
-                                <p className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 mb-2">{company.signatoryText || "Authorized Signatory"}</p>
+                                {(() => {
+                                    const fullText = company.signatoryText || "Authorized Signatory";
+                                    const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                                    if (match) {
+                                        return (
+                                            <>
+                                                <p className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 mb-1">{match[1]}</p>
+                                                <p className="text-xs text-purple-400 font-medium mb-2">{match[2]}</p>
+                                            </>
+                                        );
+                                    }
+                                    return <p className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 mb-2">{fullText}</p>;
+                                })()}
                                 <div className="w-56 h-px bg-gray-300 ml-auto mb-1"></div>
+
                             </>
                         )}
                     </div>

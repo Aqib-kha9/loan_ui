@@ -33,7 +33,7 @@ export const BoldDisbursal = React.forwardRef<HTMLDivElement, DisbursementReceip
                 </div>
                 <div className="text-right">
                     <h2 className="text-2xl font-bold uppercase tracking-widest border-2 border-white px-4 py-2 inline-block">Disbursal</h2>
-                    <p className="mt-2 text-sm font-mono">{new Date(data.disbursedDate).toLocaleDateString()}</p>
+                    <p className="mt-2 text-sm font-mono">{new Date(data.disbursedDate).toLocaleDateString('en-GB')}</p>
                 </div>
             </div>
 
@@ -65,7 +65,7 @@ export const BoldDisbursal = React.forwardRef<HTMLDivElement, DisbursementReceip
                     </div>
                     <div className="bg-gray-100 p-4">
                         <p className="text-xs font-bold uppercase text-gray-500">Tenure</p>
-                        <p className="text-xl font-bold">{data.tenureMonths} Mo</p>
+                        <p className="text-xl font-bold">{data.tenureMonths > 0 ? `${data.tenureMonths} Mo` : 'Indefinite'}</p>
                     </div>
                 </div>
 
@@ -118,7 +118,20 @@ export const BoldDisbursal = React.forwardRef<HTMLDivElement, DisbursementReceip
                         {company.showSignatory && (
                             <>
                                 <div className="h-1 bg-black w-full mb-2"></div>
-                                <p className="font-black uppercase text-sm text-right">{company.signatoryText || "Authorized Signatory"}</p>
+                                {(() => {
+                                    const fullText = company.signatoryText || "Authorized Signatory";
+                                    const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                                    if (match) {
+                                        return (
+                                            <>
+                                                <p className="font-black uppercase text-sm text-right">{match[1]}</p>
+                                                <p className="font-bold text-xs text-right">{match[2]}</p>
+                                            </>
+                                        );
+                                    }
+                                    return <p className="font-black uppercase text-sm text-right">{fullText}</p>;
+                                })()}
+
                             </>
                         )}
                     </div>

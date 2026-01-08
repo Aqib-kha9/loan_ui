@@ -36,7 +36,7 @@ export const MinimalStatement = ({ data, company }: StatementProps) => {
                 </div>
                 <div className="text-right text-xs text-gray-400">
                     <p>{company.address}</p>
-                    <p>GST: {company.gstin}</p>
+
                 </div>
             </div>
 
@@ -116,7 +116,22 @@ export const MinimalStatement = ({ data, company }: StatementProps) => {
             <div className="mt-auto pt-8 border-t border-black flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-gray-400">
                 <p>{company.tagline}</p>
                 {company.showSignatory && (
-                    <p className="text-black">{company.signatoryText || "Authorized Signatory"}</p>
+                    <div className="text-right">
+                        {(() => {
+                            const fullText = company.signatoryText || "Authorized Signatory";
+                            const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                            if (match) {
+                                return (
+                                    <>
+                                        <p className="text-black mb-1 font-bold">{match[1]}</p>
+                                        <p className="text-gray-500 mb-2 font-medium">{match[2]}</p>
+                                    </>
+                                );
+                            }
+                            return <p className="text-black mb-2 font-bold">{fullText}</p>;
+                        })()}
+
+                    </div>
                 )}
                 <p>Page 01 / 01</p>
             </div>

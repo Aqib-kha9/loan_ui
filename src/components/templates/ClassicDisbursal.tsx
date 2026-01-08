@@ -40,8 +40,7 @@ export const ClassicDisbursal = React.forwardRef<HTMLDivElement, DisbursementRec
                         <h1 className="text-3xl font-bold uppercase tracking-wide text-black">{company.name}</h1>
                         <p className="text-sm text-gray-600 whitespace-pre-line leading-tight">{company.address}</p>
                         <div className="flex gap-4 text-xs font-bold mt-2 text-gray-600">
-                            <span>GSTIN: {company.gstin}</span>
-                            <span>|</span>
+
                             <span>Mob: {company.mobile}</span>
                         </div>
                     </div>
@@ -50,7 +49,7 @@ export const ClassicDisbursal = React.forwardRef<HTMLDivElement, DisbursementRec
                     <h2 className="text-2xl font-bold uppercase text-gray-400">Loan Sanction</h2>
                     <h2 className="text-2xl font-bold uppercase text-black">& Receipt</h2>
                     <p className="text-sm font-mono mt-2 font-bold bg-gray-100 px-2 py-1 inline-block">LOAN NO: {data.loanAccountNo}</p>
-                    <p className="text-sm mt-1">Date: {new Date(data.disbursedDate).toLocaleDateString()}</p>
+                    <p className="text-sm mt-1">Date: {new Date(data.disbursedDate).toLocaleDateString('en-GB')}</p>
                 </div>
             </div>
 
@@ -69,7 +68,7 @@ export const ClassicDisbursal = React.forwardRef<HTMLDivElement, DisbursementRec
                         <span className="font-bold">{data.loanScheme === 'InterestOnly' ? 'Interest Only (Bullet)' : 'EMI Based'}</span>
 
                         <span className="text-gray-600">Tenure:</span>
-                        <span className="font-bold">{data.tenureMonths} Months</span>
+                        <span className="font-bold">{data.tenureMonths > 0 ? `${data.tenureMonths} Months` : 'Indefinite'}</span>
 
                         <span className="text-gray-600">Interest Rate:</span>
                         <span className="font-bold">{data.interestRate}% / yr</span>
@@ -149,8 +148,20 @@ export const ClassicDisbursal = React.forwardRef<HTMLDivElement, DisbursementRec
                                 <div className="h-16 mb-2 flex items-end justify-center pb-2">
                                     <span className="text-gray-300 text-xs">[Stamp / Seal]</span>
                                 </div>
-                                <div className="border-t-2 border-black pt-2 font-bold text-sm">{company.signatoryText || "Authorized Signatory"}</div>
-                                <div className="text-[10px] uppercase font-bold text-gray-400">{company.name}</div>
+                                {(() => {
+                                    const fullText = company.signatoryText || "Authorized Signatory";
+                                    const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                                    if (match) {
+                                        return (
+                                            <>
+                                                <div className="border-t-2 border-black pt-2 font-bold text-sm">{match[1]}</div>
+                                                <div className="font-medium text-xs mt-1">{match[2]}</div>
+                                            </>
+                                        );
+                                    }
+                                    return <div className="border-t-2 border-black pt-2 font-bold text-sm">{fullText}</div>;
+                                })()}
+
                             </>
                         )}
                     </div>

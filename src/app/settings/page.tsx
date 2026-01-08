@@ -217,22 +217,7 @@ export default function SettingsPage() {
                         </div>
                         <Separator />
 
-                        {/* Split Row: GSTIN */}
-                        <div className="grid md:grid-cols-3 gap-8 items-start">
-                            <div className="space-y-1">
-                                <Label className="text-base font-semibold">GSTIN / Reg No</Label>
-                                <p className="text-sm text-muted-foreground">Legal registration number for tax purposes.</p>
-                            </div>
-                            <div className="md:col-span-2">
-                                <Input
-                                    value={formData.gstin}
-                                    onChange={(e) => setFormData({ ...formData, gstin: e.target.value })}
-                                    className="max-w-xs h-11 bg-background font-mono uppercase"
-                                    placeholder="XX-XXXXXXXXXX"
-                                />
-                            </div>
-                        </div>
-                        <Separator />
+
 
                         {/* Split Row: Address */}
                         <div className="grid md:grid-cols-3 gap-8 items-start">

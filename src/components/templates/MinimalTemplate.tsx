@@ -16,7 +16,7 @@ export const MinimalTemplate = ({ data, company }: ReceiptProps) => {
                 <h1 className="text-md font-bold uppercase tracking-tight">{company.name}</h1>
                 <div className="text-right text-xs leading-relaxed text-gray-500">
                     <p>{company.address}</p>
-                    <p>{company.gstin}</p>
+
                 </div>
             </div>
 

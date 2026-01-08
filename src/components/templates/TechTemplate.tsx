@@ -23,7 +23,7 @@ export const TechTemplate = ({ data, company }: ReceiptProps) => {
                     <div>
                         <h1 className="text-4xl font-bold uppercase tracking-tighter mb-2 glitch-text">{company.name}</h1>
                         <p className="text-xs uppercase">[ SYSTEM: ONLINE ]</p>
-                        <p className="text-xs uppercase mt-1">ID: {company.gstin}</p>
+
                     </div>
                     <div className="text-right">
                         <div className="border border-[#00ff41] px-4 py-2 text-xs">

@@ -40,7 +40,7 @@ export const ModernDisbursal = React.forwardRef<HTMLDivElement, DisbursementRece
                     </div>
                     <div className="text-right opacity-80 text-sm">
                         <p className="font-medium">{company.address}</p>
-                        <p>GSTIN: {company.gstin}</p>
+
                         <p>{company.email}</p>
                     </div>
                 </div>
@@ -68,7 +68,7 @@ export const ModernDisbursal = React.forwardRef<HTMLDivElement, DisbursementRece
             <div className="px-12 flex-grow">
                 <div className="flex justify-between items-end mb-6">
                     <h2 className="text-2xl font-bold text-slate-800">Sanction Letter & Receipt</h2>
-                    <p className="text-slate-500 font-medium">{new Date(data.disbursedDate).toLocaleDateString()}</p>
+                    <p className="text-slate-500 font-medium">{new Date(data.disbursedDate).toLocaleDateString('en-GB')}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-8 mb-8">
@@ -87,7 +87,7 @@ export const ModernDisbursal = React.forwardRef<HTMLDivElement, DisbursementRece
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-slate-500">Tenure</span>
-                                <span className="font-medium text-slate-900">{data.tenureMonths} Months</span>
+                                <span className="font-medium text-slate-900">{data.tenureMonths > 0 ? `${data.tenureMonths} Months` : 'Indefinite'}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-slate-500">Interest Rate</span>
@@ -163,8 +163,20 @@ export const ModernDisbursal = React.forwardRef<HTMLDivElement, DisbursementRece
                     <div className="text-center">
                         {company.showSignatory && (
                             <>
-                                <p className="font-bold text-sm text-slate-700 mb-2">{company.signatoryText || "Authorized Signatory"}</p>
-                                <div className="text-xs text-slate-400 uppercase tracking-widest">{company.name}</div>
+                                {(() => {
+                                    const fullText = company.signatoryText || "Authorized Signatory";
+                                    const match = fullText.match(/^(authorized signatory)\s+(.+)$/i);
+                                    if (match) {
+                                        return (
+                                            <>
+                                                <p className="font-bold text-sm text-slate-700 mb-1">{match[1]}</p>
+                                                <p className="font-medium text-xs text-slate-600 mb-2">{match[2]}</p>
+                                            </>
+                                        );
+                                    }
+                                    return <p className="font-bold text-sm text-slate-700 mb-2">{fullText}</p>;
+                                })()}
+
                             </>
                         )}
                     </div>

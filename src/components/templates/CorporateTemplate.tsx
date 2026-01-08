@@ -22,7 +22,7 @@ export const CorporateTemplate = ({ data, company }: ReceiptProps) => {
                 <div className="text-right text-xs text-slate-500 leading-relaxed">
                     <p className="font-bold text-slate-700">HEAD OFFICE</p>
                     <p className="max-w-[200px]">{company.address}</p>
-                    <p className="mt-2">GSTIN: {company.gstin}</p>
+
                     <p>Contact: {company.mobile}</p>
                 </div>
             </header>
