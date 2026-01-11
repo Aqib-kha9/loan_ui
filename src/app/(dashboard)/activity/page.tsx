@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getActivities, ActivityLog } from "@/lib/activity-logger";
+import { ActivityLog } from "@/lib/activity-logger";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -23,7 +23,8 @@ import {
     Search,
     SlidersHorizontal,
     X,
-    FilterX
+    FilterX,
+    Loader2
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -40,13 +41,16 @@ type FilterState = {
 };
 
 export default function ActivityPage() {
+    const getTodayString = () => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
     const { user, checkPermission, isLoading } = useAuth();
     const [activities, setActivities] = useState<ActivityLog[]>([]);
-    const [filterDate, setFilterDate] = useState<string>(new Date().toISOString().split('T')[0]); // Default Today
+    const [isDataLoading, setIsDataLoading] = useState(false);
+    const [filterDate, setFilterDate] = useState<string>(getTodayString());
     const [searchTerm, setSearchTerm] = useState("");
-
-    if (isLoading) return null;
-    if (!checkPermission(PERMISSIONS.VIEW_ACTIVITY_LOG)) return <AccessDenied message="You do not have permission to view activity logs." />;
 
     // Advanced Filters State
     const [filters, setFilters] = useState<FilterState>({
@@ -56,46 +60,56 @@ export default function ActivityPage() {
         maxAmount: ""
     });
 
-    const loadData = () => {
-        const allLogs = getActivities();
-        // pre-filter by date if needed
-        if (filterDate) {
-            const filtered = allLogs.filter(log => log.timestamp.split('T')[0] === filterDate);
-            setActivities(filtered);
-        } else {
-            setActivities(allLogs);
+    const loadData = async () => {
+        if (isLoading || !checkPermission(PERMISSIONS.VIEW_ACTIVITY_LOG)) return;
+
+        setIsDataLoading(true);
+        try {
+            const params = new URLSearchParams();
+            if (searchTerm) params.append('search', searchTerm);
+
+            if (filterDate) {
+                // Convert Local Date (YYYY-MM-DD) to UTC Range
+                const [y, m, d] = filterDate.split('-').map(Number);
+                const start = new Date(y, m - 1, d, 0, 0, 0, 0);
+                const end = new Date(y, m - 1, d, 23, 59, 59, 999);
+
+                params.append('startDate', start.toISOString());
+                params.append('endDate', end.toISOString());
+            }
+
+            if (filters.types.length > 0) params.append('types', filters.types.join(','));
+            if (filters.actions.length > 0) params.append('actions', filters.actions.join(','));
+            if (filters.minAmount) params.append('minAmount', filters.minAmount);
+            if (filters.maxAmount) params.append('maxAmount', filters.maxAmount);
+
+            const res = await fetch(`/api/activity?${params.toString()}`);
+            const data = await res.json();
+            if (data.success) {
+                let logs = data.activities.map((a: any) => ({ ...a, id: a._id }));
+                setActivities(logs);
+            }
+        } catch (error) {
+            console.error("Failed to load activities:", error);
+        } finally {
+            setIsDataLoading(false);
         }
     };
 
     useEffect(() => {
-        loadData();
-        const interval = setInterval(loadData, 5000);
+        const timer = setTimeout(() => {
+            loadData();
+        }, 300); // 300ms debounce
+        return () => clearTimeout(timer);
+    }, [searchTerm, filterDate, filters]);
+
+    // Polling with current filters
+    useEffect(() => {
+        const interval = setInterval(loadData, 10000); // Poll every 10s
         return () => clearInterval(interval);
-    }, [filterDate]);
+    }, [searchTerm, filterDate, filters]);
 
-    // COMPREHENSIVE FILTER LOGIC
-    const filteredActivities = activities.filter(log => {
-        // 1. Text Search
-        const matchesSearch =
-            log.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (log.entityName && log.entityName.toLowerCase().includes(searchTerm.toLowerCase()));
-
-        // 2. Type Filter
-        const matchesType = filters.types.length === 0 || filters.types.includes(log.type);
-
-        // 3. Action Filter
-        const matchesAction = filters.actions.length === 0 || (log.action && filters.actions.includes(log.action));
-
-        // 4. Amount Filter
-        let matchesAmount = true;
-        if (log.amount !== undefined) {
-            const amt = Math.abs(log.amount);
-            if (filters.minAmount && amt < parseFloat(filters.minAmount)) matchesAmount = false;
-            if (filters.maxAmount && amt > parseFloat(filters.maxAmount)) matchesAmount = false;
-        }
-
-        return matchesSearch && matchesType && matchesAction && matchesAmount;
-    });
+    const filteredActivities = activities;
 
     // Helper to toggle array items
     const toggleFilter = (category: 'types' | 'actions', value: string) => {
@@ -120,6 +134,9 @@ export default function ActivityPage() {
     };
 
     const hasActiveFilters = filters.types.length > 0 || filters.actions.length > 0 || filters.minAmount || filters.maxAmount || searchTerm;
+
+    if (isLoading) return null;
+    if (!checkPermission(PERMISSIONS.VIEW_ACTIVITY_LOG)) return <AccessDenied message="You do not have permission to view activity logs." />;
 
     return (
         <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-5rem)] flex flex-col bg-muted/5 overflow-hidden">
@@ -277,7 +294,19 @@ export default function ActivityPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredActivities.length === 0 ? (
+                            {isDataLoading ? (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="h-[400px]">
+                                        <div className="flex flex-col items-center justify-center gap-3">
+                                            <div className="relative">
+                                                <div className="h-12 w-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                                                <Activity className="h-5 w-5 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+                                            </div>
+                                            <p className="text-sm font-medium animate-pulse text-muted-foreground">Syncing activities...</p>
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ) : filteredActivities.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={5} className="h-[400px] text-center text-muted-foreground">
                                         <div className="flex flex-col items-center justify-center gap-3">

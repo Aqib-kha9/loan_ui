@@ -29,7 +29,9 @@ import {
     Wallet,
     Check,
     Info,
-    FileText
+    FileText,
+    Search,
+    Users
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -95,6 +97,67 @@ export default function NewLoanPage() {
             }
         `
     });
+
+    // Existing Client Selection Logic
+    const [existingClients, setExistingClients] = useState<any[]>([]);
+    const [isClientSelectOpen, setIsClientSelectOpen] = useState(false);
+    const [clientSearchTerm, setClientSearchTerm] = useState("");
+
+    useEffect(() => {
+        const fetchClients = async () => {
+            // Check if query params has clientId (from redirect)
+            const searchParams = new URLSearchParams(window.location.search);
+            const urlClientId = searchParams.get('clientId');
+
+            try {
+                const res = await fetch('/api/loans'); // Fetch loans to get client list (as per current architecture)
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && Array.isArray(data.loans)) {
+                        // Extract unique clients
+                        const uniqueClientsMap = new Map();
+                        data.loans.forEach((loan: any) => {
+                            if (loan.client && !uniqueClientsMap.has(loan.client._id)) {
+                                uniqueClientsMap.set(loan.client._id, loan.client);
+                            }
+                        });
+                        const clients = Array.from(uniqueClientsMap.values());
+                        setExistingClients(clients);
+
+                        // If URL has clientId, pre-fill
+                        if (urlClientId) {
+                            const found = clients.find(c => c._id === urlClientId);
+                            if (found) handleSelectClient(found);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to fetch clients", error);
+            }
+        };
+        fetchClients();
+    }, []);
+
+    const handleSelectClient = (client: any) => {
+        setFormData(prev => ({
+            ...prev,
+            firstName: client.firstName,
+            lastName: client.lastName,
+            mobile: client.mobile,
+            email: client.email || "",
+            address: client.address || "",
+            aadhar: client.aadhar || "",
+            pan: client.pan || "",
+        }));
+        if (client.photoUrl) setCustomerImage(client.photoUrl);
+        setIsClientSelectOpen(false);
+        toast.success(`Selected customer: ${client.firstName} ${client.lastName}`);
+    };
+
+    const filteredExistingClients = existingClients.filter(c =>
+        (c.firstName + ' ' + c.lastName).toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
+        c.mobile.includes(clientSearchTerm)
+    );
 
     const [formData, setFormData] = useState({
         // Customer Info
@@ -460,6 +523,15 @@ export default function NewLoanPage() {
                                         <UserPlus className="h-4 w-4" />
                                     </div>
                                     Customer Identity
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="ml-auto gap-2 text-xs font-bold border-primary/20 text-primary hover:bg-primary/5"
+                                        onClick={() => setIsClientSelectOpen(true)}
+                                        type="button"
+                                    >
+                                        <Users className="h-4 w-4" /> Select Existing
+                                    </Button>
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="grid sm:grid-cols-2 gap-x-6 gap-y-5 pt-6">
@@ -1043,6 +1115,46 @@ export default function NewLoanPage() {
                                     );
                                 })()}
                             </div>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Existing Client Selection Dialog */}
+            <Dialog open={isClientSelectOpen} onOpenChange={setIsClientSelectOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogTitle>Select Existing Customer</DialogTitle>
+                    <div className="space-y-4 pt-4">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Search by name or mobile..."
+                                className="pl-9"
+                                value={clientSearchTerm}
+                                onChange={(e) => setClientSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <div className="max-h-[300px] overflow-y-auto space-y-2 border rounded-md p-2">
+                            {filteredExistingClients.length === 0 ? (
+                                <p className="text-center text-sm text-muted-foreground py-4">No customers found.</p>
+                            ) : (
+                                filteredExistingClients.map(client => (
+                                    <div
+                                        key={client._id}
+                                        className="flex items-center gap-3 p-2 hover:bg-muted rounded-lg cursor-pointer transition-colors"
+                                        onClick={() => handleSelectClient(client)}
+                                    >
+                                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                                            {client.firstName[0]}{client.lastName[0]}
+                                        </div>
+                                        <div className="overflow-hidden">
+                                            <p className="text-sm font-medium truncate">{client.firstName} {client.lastName}</p>
+                                            <p className="text-xs text-muted-foreground truncate">{client.mobile}</p>
+                                        </div>
+                                        <Badge variant="outline" className="ml-auto text-[10px] shrink-0">Select</Badge>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </DialogContent>

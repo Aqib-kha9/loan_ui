@@ -1,40 +1,28 @@
-import { LoanAccount } from "./mock-data";
+// Client-side Activity Logger
+// For server-side logging, use the Activity model directly
 
 export interface ActivityLog {
-    id: string;
+    _id: string;
+    id?: string; // Compatibility
     type: 'Loan' | 'Payment' | 'System';
     title: string;
     description: string;
     timestamp: string;
     user: string;
-    entityName?: string; // e.g., Customer Name
-    amount?: number; // Positive or Negative
+    entityName?: string;
+    amount?: number;
     action?: 'Disbursed' | 'Received' | 'Created' | 'Updated';
     meta?: any;
 }
 
-// In-memory store for demo (would be database in real app)
-let activityLogs: ActivityLog[] = [
-    {
-        id: '1',
-        type: 'System',
-        title: 'System Initialized',
-        description: 'Loan ERP System started successfully.',
-        timestamp: new Date().toISOString(),
-        user: 'System'
+export const logActivity = async (log: Omit<ActivityLog, '_id' | 'timestamp' | 'id'>) => {
+    try {
+        await fetch('/api/activity', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(log)
+        });
+    } catch (error) {
+        console.error("Failed to log activity client-side:", error);
     }
-];
-
-export const getActivities = (): ActivityLog[] => {
-    return activityLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-};
-
-export const logActivity = (log: Omit<ActivityLog, 'id' | 'timestamp'>) => {
-    const newLog: ActivityLog = {
-        ...log,
-        id: Math.random().toString(36).substr(2, 9),
-        timestamp: new Date().toISOString()
-    };
-    activityLogs = [newLog, ...activityLogs];
-    return newLog;
 };

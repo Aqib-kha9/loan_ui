@@ -197,8 +197,8 @@ const LoanSchema = new mongoose.Schema({
     // Meta
     status: {
         type: String,
-        enum: ['active', 'closed', 'defaulted', 'written_off'],
-        default: 'active',
+        enum: ['Active', 'Closed', 'NPA', 'Rejected'],
+        default: 'Active',
     },
     disbursedBy: {
         type: String, // Username or ID of admin

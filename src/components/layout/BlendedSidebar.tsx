@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import {
     LayoutDashboard,
@@ -20,7 +21,11 @@ import {
     PanelLeftOpen,
     Activity,
     LogOut,
-    ShieldCheck // New Icon
+    ShieldCheck, // New Icon
+    Palette,
+    Sun,
+    Moon,
+    Monitor
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -32,6 +37,10 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
+    DropdownMenuSub,
+    DropdownMenuSubTrigger,
+    DropdownMenuSubContent,
+    DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
 import {
     Dialog,
@@ -59,10 +68,36 @@ export function BlendedSidebar({ className }: { className?: string }) {
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(false);
     const { user, checkPermission, logout } = useAuth();
+    const { setTheme } = useTheme();
+
+    const changeColorTheme = (newColor: string) => {
+        document.documentElement.setAttribute("data-theme", newColor);
+    };
 
     // Change Password State
     const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
     const [passwordState, setPasswordState] = useState({ current: '', new: '' });
+
+    // Company Settings State
+    const [companyInfo, setCompanyInfo] = useState<{ name: string; logoUrl?: string; tagline?: string } | null>(null);
+    const [isBrandingLoading, setIsBrandingLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                const res = await fetch('/api/settings');
+                const data = await res.json();
+                if (data.success && data.settings?.companySettings) {
+                    setCompanyInfo(data.settings.companySettings);
+                }
+            } catch (err) {
+                console.error("Failed to fetch sidebar branding:", err);
+            } finally {
+                setIsBrandingLoading(false);
+            }
+        };
+        fetchSettings();
+    }, []);
 
     const handleChangePassword = async () => {
         if (!passwordState.current || !passwordState.new) return;
@@ -119,13 +154,32 @@ export function BlendedSidebar({ className }: { className?: string }) {
         >
             {/* Brand Header */}
             <div className={cn("mb-8 flex items-center gap-3 transition-all duration-300", isCollapsed ? "justify-center px-0" : "px-2")}>
-                <div className="h-10 w-10 shrink-0 rounded-xl bg-primary shadow-lg shadow-primary/25 flex items-center justify-center text-primary-foreground ring-2 ring-white/10">
-                    <Building2 className="h-6 w-6" />
+                <div className="h-10 w-10 shrink-0 rounded-xl bg-primary shadow-lg shadow-primary/25 flex items-center justify-center text-primary-foreground ring-2 ring-white/10 overflow-hidden">
+                    {isBrandingLoading ? (
+                        <div className="h-full w-full animate-pulse bg-white/20" />
+                    ) : (companyInfo?.logoUrl ? (
+                        <img src={companyInfo.logoUrl} alt="Logo" className="h-full w-full object-cover" />
+                    ) : (
+                        <Building2 className="h-6 w-6" />
+                    ))}
                 </div>
                 {!isCollapsed && (
-                    <div className="flex flex-col min-w-0 overflow-hidden whitespace-nowrap">
-                        <span className="text-foreground font-bold tracking-tight text-lg leading-tight truncate">FinCorp</span>
-                        <span className="text-[10px] uppercase tracking-widest font-bold text-primary truncate">Enterprise</span>
+                    <div className="flex flex-col min-w-0 overflow-hidden whitespace-nowrap text-left flex-1">
+                        {isBrandingLoading ? (
+                            <div className="space-y-1">
+                                <div className="h-4 w-24 animate-pulse bg-white/20 rounded" />
+                                <div className="h-3 w-16 animate-pulse bg-white/20 rounded" />
+                            </div>
+                        ) : (
+                            <>
+                                <span className="text-foreground font-bold tracking-tight text-lg leading-tight truncate">
+                                    {companyInfo?.name?.trim() || "FinCorp"}
+                                </span>
+                                <span className="text-[10px] uppercase tracking-widest font-bold text-primary truncate">
+                                    {companyInfo?.tagline?.trim() || "Enterprise"}
+                                </span>
+                            </>
+                        )}
                     </div>
                 )}
             </div>
@@ -208,6 +262,54 @@ export function BlendedSidebar({ className }: { className?: string }) {
                                 <ShieldCheck className="mr-2 h-4 w-4" />
                                 <span>Change Password</span>
                             </DropdownMenuItem>
+
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Appearance</DropdownMenuLabel>
+
+                            <DropdownMenuSub>
+                                <DropdownMenuSubTrigger>
+                                    <Sun className="mr-2 h-4 w-4" />
+                                    <span>Theme</span>
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuPortal>
+                                    <DropdownMenuSubContent>
+                                        <DropdownMenuItem onClick={() => setTheme("light")}>
+                                            <Sun className="mr-2 h-4 w-4" /> Light
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => setTheme("dark")}>
+                                            <Moon className="mr-2 h-4 w-4" /> Dark
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => setTheme("system")}>
+                                            <Monitor className="mr-2 h-4 w-4" /> System
+                                        </DropdownMenuItem>
+                                    </DropdownMenuSubContent>
+                                </DropdownMenuPortal>
+                            </DropdownMenuSub>
+
+                            <DropdownMenuSub>
+                                <DropdownMenuSubTrigger>
+                                    <Palette className="mr-2 h-4 w-4" />
+                                    <span>Accent</span>
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuPortal>
+                                    <DropdownMenuSubContent>
+                                        {[
+                                            { name: "Zinc", id: "zinc", color: "bg-zinc-600" },
+                                            { name: "Slate", id: "slate", color: "bg-slate-600" },
+                                            { name: "Blue", id: "blue", color: "bg-blue-600" },
+                                            { name: "Violet", id: "violet", color: "bg-violet-600" },
+                                            { name: "Rose", id: "rose", color: "bg-rose-600" },
+                                            { name: "Orange", id: "orange", color: "bg-orange-600" },
+                                            { name: "Green", id: "green", color: "bg-emerald-600" },
+                                        ].map(c => (
+                                            <DropdownMenuItem key={c.id} onClick={() => changeColorTheme(c.id)}>
+                                                <div className={`mr-2 h-4 w-4 rounded-full ${c.color}`} />
+                                                {c.name}
+                                            </DropdownMenuItem>
+                                        ))}
+                                    </DropdownMenuSubContent>
+                                </DropdownMenuPortal>
+                            </DropdownMenuSub>
                             <DropdownMenuItem onClick={() => logout()} className="text-red-600 focus:text-red-600 cursor-pointer">
                                 <LogOut className="mr-2 h-4 w-4" />
                                 <span>Log out</span>

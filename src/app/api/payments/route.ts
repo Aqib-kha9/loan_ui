@@ -305,12 +305,26 @@ export async function POST(req: Request) {
 
             if (loan.status === 'Active' && currentOutstanding <= 0) {
                  // Auto-close if balance is cleared (tolerance for dust < 1)
-                 if (currentOutstanding < 1) {
+                 // BUT SKIP for Indefinite/InterestOnly as their "Schedule" is just interest. 
+                 // We let the Loan Engine handle Principal closure.
+                 const isIndefinite = loan.indefiniteTenure || loan.loanScheme === 'InterestOnly';
+                 
+                 if (!isIndefinite && currentOutstanding < 1) {
                     loan.status = 'Closed'; 
                  }
             }
         }
 
+
+
+        // Normalize Status to Title Case (Fix for legacy 'active' vs 'Active' validation error)
+        if (loan.status) {
+             const s = loan.status.toString().toLowerCase();
+             if (s === 'active') loan.status = 'Active';
+             else if (s === 'closed') loan.status = 'Closed';
+             else if (s === 'npa') loan.status = 'NPA';
+             else if (s === 'rejected') loan.status = 'Rejected';
+        }
 
         await loan.save();
 

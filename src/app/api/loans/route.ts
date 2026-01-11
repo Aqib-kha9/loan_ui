@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/db';
 import Client from '@/lib/models/Client';
 import Loan from '@/lib/models/Loan';
+import Activity from '@/lib/models/Activity';
 import { uploadToCloudinary } from '@/lib/cloudinary';
 import { logActivity } from '@/lib/activity-logger';
 import { cookies } from 'next/headers';
@@ -283,7 +284,7 @@ export async function POST(req: Request) {
                 reference: mode.reference
             })),
             
-            status: 'active',
+            status: 'Active',
             disbursedBy: 'Admin User' 
         });
 
@@ -319,7 +320,7 @@ export async function GET(req: Request) {
         }
 
         const loans = await Loan.find({})
-            .populate('client', 'firstName lastName photoUrl mobile')
+            .populate('client', 'firstName lastName photoUrl mobile address email')
             .sort({ createdAt: -1 });
 
         return NextResponse.json({ success: true, loans });

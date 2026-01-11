@@ -1,0 +1,57 @@
+
+> loanerp@0.1.0 build
+> next build
+
+▲ Next.js 16.1.1 (Turbopack)
+- Environments: .env
+
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+  Creating an optimized production build ...
+✓ Compiled successfully in 6.1s
+  Running TypeScript ...
+  Collecting page data using 11 workers ...
+  Generating static pages using 11 workers (0/24) ...
+  Generating static pages using 11 workers (6/24) 
+  Generating static pages using 11 workers (12/24) 
+  Generating static pages using 11 workers (18/24) 
+✓ Generating static pages using 11 workers (24/24) in 927.2ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /activity
+├ ƒ /api/activity
+├ ƒ /api/auth/change-password
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/me
+├ ƒ /api/auth/register
+├ ƒ /api/clients/[id]
+├ ƒ /api/dashboard/stats
+├ ƒ /api/debug/migrate
+├ ƒ /api/loans
+├ ƒ /api/loans/[id]
+├ ƒ /api/loans/[id]/reconcile
+├ ƒ /api/payments
+├ ƒ /api/roles
+├ ƒ /api/roles/[id]
+├ ƒ /api/settings
+├ ƒ /api/users
+├ ƒ /api/users/[id]
+├ ○ /clients
+├ ○ /dashboard
+├ ○ /loans
+├ ƒ /loans/[id]
+├ ○ /loans/new
+├ ○ /login
+├ ○ /settings
+├ ○ /statements
+└ ○ /team
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

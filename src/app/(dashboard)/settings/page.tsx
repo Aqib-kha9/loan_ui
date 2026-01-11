@@ -29,7 +29,8 @@ import {
     CreditCard,
     Smartphone,
     Mail,
-    Type
+    Type,
+    Loader2
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
@@ -56,6 +57,7 @@ export default function SettingsPage() {
 
     const [mounted, setMounted] = useState(false);
     const [colorTheme, setColorTheme] = useState("zinc");
+    const [isSaving, setIsSaving] = useState(false); // Added loading state
 
     const [formData, setFormData] = useState(companySettings);
     const [previewMode, setPreviewMode] = useState<"receipt" | "statement" | "disbursal">("receipt");
@@ -104,10 +106,28 @@ export default function SettingsPage() {
         setColorTheme(newColor);
     };
 
-    const handleSaveCompany = () => {
-        updateCompanySettings(formData);
-        toast.success("Settings saved successfully.");
+    const handleSaveCompany = async () => {
+        setIsSaving(true);
+        try {
+            await updateCompanySettings(formData);
+            toast.success("Settings saved successfully.");
+        } catch (error) {
+            toast.error("Failed to save settings.");
+        } finally {
+            setIsSaving(false);
+        }
     }
+
+    const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setFormData(prev => ({ ...prev, logoUrl: reader.result as string }));
+            };
+            reader.readAsDataURL(file);
+        }
+    };
 
     // Mock data for previews
     const receiptData = {
@@ -208,11 +228,41 @@ export default function SettingsPage() {
                             <Building2 className="h-5 w-5 text-primary" /> Company Profile
                         </h2>
                         {checkPermission(PERMISSIONS.EDIT_SETTINGS) && (
-                            <Button onClick={handleSaveCompany} size="sm" className="shadow-lg shadow-primary/20">Save Changes</Button>
+                            <Button onClick={handleSaveCompany} size="sm" className="shadow-lg shadow-primary/20" disabled={isSaving}>
+                                {isSaving && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
+                                Save Changes
+                            </Button>
                         )}
                     </div>
 
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {/* Split Row: Logo */}
+                        <div className="grid md:grid-cols-3 gap-8 items-start">
+                            <div className="space-y-1">
+                                <Label className="text-base font-semibold">Company Logo</Label>
+                                <p className="text-sm text-muted-foreground">Upload your business logo (PNG/JPG).</p>
+                            </div>
+                            <div className="md:col-span-2 flex items-center gap-6">
+                                <div className="h-24 w-24 relative rounded-lg border overflow-hidden bg-white flex items-center justify-center p-2">
+                                    {formData.logoUrl ? (
+                                        <img src={formData.logoUrl} alt="Logo" className="object-contain h-full w-full" />
+                                    ) : (
+                                        <Building2 className="h-8 w-8 text-muted-foreground" />
+                                    )}
+                                </div>
+                                <div className="space-y-2">
+                                    <Input
+                                        type="file"
+                                        accept="image/*"
+                                        className="w-full max-w-xs cursor-pointer file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                                        onChange={handleLogoUpload}
+                                    />
+                                    <p className="text-xs text-muted-foreground">Max size 2MB. Recommended 400x200px.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <Separator />
+
                         {/* Split Row: Name */}
                         <div className="grid md:grid-cols-3 gap-8 items-start">
                             <div className="space-y-1">

@@ -9,7 +9,7 @@ export function numberToWords(num: number): string {
     const regex = /^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/;
 
     const getLT20 = (n: number) => a[Number(n)];
-    const get20Plus = (n: number) => b[Number(n[0])] + ' ' + a[Number(n[1])];
+    const get20Plus = (n: string) => b[Number(n[0])] + ' ' + a[Number(n[1])];
 
     if (num === 0) return 'Zero';
 

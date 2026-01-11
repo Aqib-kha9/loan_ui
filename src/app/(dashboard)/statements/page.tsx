@@ -38,7 +38,8 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { MOCK_LOANS } from "@/lib/mock-data";
+import { LoanAccount } from "@/lib/mock-data";
+import { mapLoanToFrontend } from "@/lib/mapper";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -55,9 +56,31 @@ export default function StatementsPage() {
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
 
+    const [loans, setLoans] = useState<LoanAccount[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Fetch Loans
+    useEffect(() => {
+        const fetchLoans = async () => {
+            try {
+                const res = await fetch('/api/loans');
+                const data = await res.json();
+                if (data.success) {
+                    const mapped = data.loans.map((l: any) => mapLoanToFrontend(l));
+                    setLoans(mapped);
+                }
+            } catch (error) {
+                console.error("Failed to fetch loans:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchLoans();
+    }, []);
+
     // Derive selectedClient
     const selectedClient = selectedLoanNumber
-        ? MOCK_LOANS.find(l => l.loanNumber === selectedLoanNumber)
+        ? loans.find(l => l.loanNumber === selectedLoanNumber)
         : null;
 
     // Get Settings
@@ -73,11 +96,11 @@ export default function StatementsPage() {
     });
 
     // Filter logic for search
-    const filteredClients = searchTerm.length > 0 ? MOCK_LOANS.filter(client =>
+    const filteredClients = searchTerm.length > 0 ? loans.filter(client =>
         client.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         client.loanNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         client.mobile.includes(searchTerm)
-    ) : MOCK_LOANS.slice(0, 10); // Show recent 10 by default
+    ) : loans.slice(0, 10); // Show recent 10 by default
 
     // Filter logic for transactions
     const getFilteredTransactions = () => {
@@ -95,8 +118,79 @@ export default function StatementsPage() {
 
     const transactions = getFilteredTransactions();
 
-    // Prepare data
+    // Recalculate balances after any edit/delete
+    const recalculateBalances = (entries: any[]) => {
+        let runningBalance = 0;
+        return entries.map(entry => {
+            // For editing, we allow modifying components. 
+            // If it's a payment (credit), we use amount.
+            // If it's a charge (debit), we sum components.
+            let d = entry.debit;
+            let c = entry.credit;
+
+            if (entry.isPayment) {
+                c = entry.amount || 0;
+                d = 0;
+            } else {
+                // If standard charge, ensure it matches components
+                d = (entry.principalComponent || 0) + (entry.interestComponent || 0) + (entry.penalty || 0);
+                c = 0;
+            }
+
+            runningBalance = runningBalance + d - c;
+            return {
+                ...entry,
+                debit: d,
+                credit: c,
+                balance: runningBalance
+            };
+        });
+    };
+
+    // Derived: Total Ledger Entries (All for calculation)
     const [ledgerEntries, setLedgerEntries] = useState<any[]>([]);
+
+    // Derived: Display Entries (Filtered + Opening Balance)
+    const getDisplayEntries = () => {
+        if (ledgerEntries.length === 0) return [];
+
+        let filtered = [...ledgerEntries];
+        let openingBalance = 0;
+
+        if (startDate) {
+            const start = new Date(startDate);
+            // Calculate Opening Balance (Sum of all entries before start date)
+            const beforeStart = filtered.filter(t => new Date(t.date) < start);
+            openingBalance = beforeStart.reduce((sum, t) => sum + (t.debit || 0) - (t.credit || 0), 0);
+
+            // Filter for display
+            filtered = filtered.filter(t => new Date(t.date) >= start);
+        }
+
+        if (endDate) {
+            const end = new Date(endDate);
+            filtered = filtered.filter(t => new Date(t.date) <= end);
+        }
+
+        // If filtering is applied, prepend "Opening Balance"
+        if (startDate) {
+            const openingRow = {
+                date: startDate,
+                particulars: "OPENING BALANCE B/F",
+                type: "Closing",
+                debit: 0,
+                credit: 0,
+                balance: openingBalance,
+                isOpening: true
+            };
+            return [openingRow, ...filtered];
+        }
+
+        return filtered;
+    };
+
+    const displayEntries = getDisplayEntries();
+
     const [isEditing, setIsEditing] = useState(false);
 
     // Initialize Ledger when client is selected
@@ -110,7 +204,9 @@ export default function StatementsPage() {
                 penalty: (t as any).penalty || 0,
                 // Ensure components exist
                 principalComponent: t.principalComponent || 0,
-                interestComponent: t.interestComponent || 0
+                interestComponent: t.interestComponent || 0,
+                amount: t.credit > 0 ? t.credit : t.debit,
+                isPayment: t.credit > 0
             }));
             setLedgerEntries(enrich);
         } else {
@@ -118,10 +214,10 @@ export default function StatementsPage() {
         }
     }, [selectedClient]);
 
-    // Calculate Totals based on current 'ledgerEntries' state
-    const totalInterest = ledgerEntries.reduce((sum, t) => sum + (t.type === 'Interest' ? t.debit : 0), 0);
-    const totalPaid = ledgerEntries.reduce((sum, t) => sum + t.credit, 0);
-    const closingBalance = ledgerEntries.length > 0 ? ledgerEntries[ledgerEntries.length - 1].balance : 0;
+    // Calculate Totals based on current 'displayEntries' state (Period Specific)
+    const periodInterest = displayEntries.reduce((sum, t) => sum + (t.type === 'Interest' ? t.debit : 0), 0);
+    const periodPaid = displayEntries.reduce((sum, t) => sum + t.credit, 0);
+    const periodClosingBalance = displayEntries.length > 0 ? displayEntries[displayEntries.length - 1].balance : 0;
 
     const statementData = selectedClient ? {
         customerName: selectedClient.customerName,
@@ -132,11 +228,11 @@ export default function StatementsPage() {
         loanAmount: selectedClient.totalLoanAmount.toString(),
         interestRate: selectedClient.interestRate + "%",
         interestPaidInAdvance: selectedClient.interestPaidInAdvance,
-        // Pass totals
-        totalInterest: totalInterest,
-        totalPaid: totalPaid,
-        closingBalance: closingBalance,
-        transactions: ledgerEntries.map(t => ({
+        // Pass totals (Period Sensitive)
+        totalInterest: periodInterest,
+        totalPaid: periodPaid,
+        closingBalance: periodClosingBalance,
+        transactions: displayEntries.map(t => ({
             ...t,
             amount: t.credit > 0 ? t.credit : t.debit,
             isPayment: t.credit > 0,
@@ -145,15 +241,71 @@ export default function StatementsPage() {
         }))
     } : null;
 
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
     const handleUpdateEntry = (index: number, field: string, value: any) => {
-        const updated = [...ledgerEntries];
+        let updated = [...ledgerEntries];
         updated[index] = { ...updated[index], [field]: value };
+
+        // If amount changed for payment, or components changed for charge, we need to sync them
+        if (updated[index].isPayment) {
+            if (field === 'amount') updated[index].credit = value;
+        } else {
+            // Recalculate debit if components changed
+            updated[index].debit = (updated[index].principalComponent || 0) +
+                (updated[index].interestComponent || 0) +
+                (updated[index].penalty || 0);
+        }
+
+        updated = recalculateBalances(updated);
         setLedgerEntries(updated);
+        setHasUnsavedChanges(true);
     };
 
     const handleDeleteEntry = (index: number) => {
-        const updated = ledgerEntries.filter((_, i) => i !== index);
+        let updated = ledgerEntries.filter((_, i) => i !== index);
+        updated = recalculateBalances(updated);
         setLedgerEntries(updated);
+        setHasUnsavedChanges(true);
+    };
+
+    const [isSaving, setIsSaving] = useState(false);
+    const handleSave = async () => {
+        if (!selectedLoanNumber) return;
+        setIsSaving(true);
+        const promise = new Promise(async (resolve, reject) => {
+            try {
+                const res = await fetch(`/api/loans/${selectedLoanNumber}/reconcile`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ledgerEntries })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setHasUnsavedChanges(false);
+                    // Re-fetch loans to sync all stats
+                    const lRes = await fetch('/api/loans');
+                    const lData = await lRes.json();
+                    if (lData.success) {
+                        const mapped = lData.loans.map((l: any) => mapLoanToFrontend(l));
+                        setLoans(mapped);
+                    }
+                    resolve(data);
+                } else {
+                    reject(data.error);
+                }
+            } catch (error) {
+                reject(error);
+            } finally {
+                setIsSaving(false);
+            }
+        });
+
+        toast.promise(promise, {
+            loading: 'Saving changes to database...',
+            success: 'Ledger reconciled and saved successfully!',
+            error: (err) => `Failed to save: ${err}`
+        });
     };
 
     const [isSidebarHovered, setIsSidebarHovered] = useState(false);
@@ -228,6 +380,7 @@ export default function StatementsPage() {
                                         "border-none shrink-0 transition-all items-center justify-center",
                                         isCollapsed ? "h-10 w-10 ring-2 ring-primary/20 shadow-md" : "h-8 w-8"
                                     )}>
+                                        <AvatarImage src={client.photoUrl} className="object-cover" />
                                         <AvatarFallback className="bg-primary text-primary-foreground font-bold text-[10px]">
                                             {client.customerName.slice(0, 2).toUpperCase()}
                                         </AvatarFallback>
@@ -313,6 +466,11 @@ export default function StatementsPage() {
                                     Edit Data
                                 </Button>
 
+                                <Button size="sm" variant="secondary" className="h-8 gap-1.5 text-xs ml-2" onClick={() => handlePrint()}>
+                                    <Download className="h-3.5 w-3.5" />
+                                    Download
+                                </Button>
+
                                 <Button size="sm" className="h-8 gap-1.5 shadow-sm text-xs ml-2" onClick={() => handlePrint()}>
                                     <Printer className="h-3.5 w-3.5" />
                                     Print
@@ -360,12 +518,12 @@ export default function StatementsPage() {
                                         <Table>
                                             <TableHeader className="bg-muted/50">
                                                 <TableRow>
-                                                    <TableHead className="w-[160px] text-sm font-semibold">Date</TableHead>
-                                                    <TableHead className="min-w-[350px] text-sm font-semibold">Particulars</TableHead>
+                                                    <TableHead className="w-[140px] text-sm font-semibold">Date</TableHead>
+                                                    <TableHead className="min-w-[250px] text-sm font-semibold">Particulars</TableHead>
                                                     <TableHead className="w-[120px] text-sm font-semibold">Ref No</TableHead>
-                                                    <TableHead className="text-right w-[140px] text-sm font-semibold">Principal</TableHead>
-                                                    <TableHead className="text-right w-[140px] text-sm font-semibold">Interest</TableHead>
-                                                    <TableHead className="text-right w-[140px] text-sm font-semibold">Penalty</TableHead>
+                                                    <TableHead className="text-right w-[120px] text-sm font-semibold">Amount / Prin.</TableHead>
+                                                    <TableHead className="text-right w-[100px] text-sm font-semibold">Interest</TableHead>
+                                                    <TableHead className="text-right w-[100px] text-sm font-semibold">Penalty</TableHead>
                                                     <TableHead className="w-[50px]"></TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -396,8 +554,8 @@ export default function StatementsPage() {
                                                         <TableCell className="p-2">
                                                             <Input
                                                                 type="number"
-                                                                value={entry.principalComponent}
-                                                                onChange={(e) => handleUpdateEntry(index, 'principalComponent', parseFloat(e.target.value))}
+                                                                value={entry.isPayment ? entry.amount : entry.principalComponent}
+                                                                onChange={(e) => handleUpdateEntry(index, entry.isPayment ? 'amount' : 'principalComponent', parseFloat(e.target.value))}
                                                                 className="h-10 text-sm text-right font-mono"
                                                             />
                                                         </TableCell>
@@ -406,6 +564,7 @@ export default function StatementsPage() {
                                                                 type="number"
                                                                 value={entry.interestComponent}
                                                                 onChange={(e) => handleUpdateEntry(index, 'interestComponent', parseFloat(e.target.value))}
+                                                                disabled={entry.isPayment}
                                                                 className="h-10 text-sm text-right font-mono"
                                                             />
                                                         </TableCell>
@@ -414,6 +573,7 @@ export default function StatementsPage() {
                                                                 type="number"
                                                                 value={entry.penalty}
                                                                 onChange={(e) => handleUpdateEntry(index, 'penalty', parseFloat(e.target.value))}
+                                                                disabled={entry.isPayment}
                                                                 className="h-10 text-sm text-right font-mono"
                                                             />
                                                         </TableCell>
@@ -433,8 +593,20 @@ export default function StatementsPage() {
                                             </TableBody>
                                         </Table>
                                     </div>
-                                    <div className="flex justify-end pt-4">
-                                        <Button onClick={() => setIsEditing(false)}>Done</Button>
+                                    <div className="flex justify-between items-center pt-6 border-t mt-4">
+                                        <div className="text-sm text-muted-foreground italic">
+                                            {hasUnsavedChanges ? "* You have unsaved changes that will be lost on refresh." : "All changes saved locally."}
+                                        </div>
+                                        <div className="flex gap-3">
+                                            <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
+                                            <Button
+                                                onClick={handleSave}
+                                                disabled={!hasUnsavedChanges || isSaving}
+                                                className="min-w-[140px]"
+                                            >
+                                                {isSaving ? "Saving..." : "Save to Database"}
+                                            </Button>
+                                        </div>
                                     </div>
                                 </DialogContent>
                             </Dialog>

@@ -337,8 +337,12 @@ export default function TeamPage() {
     );
 
     return (
-        <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-5rem)] bg-muted/10 flex flex-col overflow-hidden">
-            {isLoading && <FullPageLoader />}
+        <div className="relative -m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-5rem)] bg-muted/10 flex flex-col overflow-hidden">
+            {isLoading && (
+                <div className="absolute inset-0 bg-background/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-300">
+                    <Loader size="xl" />
+                </div>
+            )}
 
             {/* === 1. STICKY HEADER === */}
             <div className="h-13 md:h-14 border-b border-border/50 flex items-center justify-between px-4 bg-white/95 backdrop-blur-xl shrink-0 dark:bg-zinc-950/95 sticky top-0 z-30">

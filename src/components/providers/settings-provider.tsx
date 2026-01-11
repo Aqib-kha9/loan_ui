@@ -60,37 +60,54 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const [companySettings, setCompanySettings] = useState<CompanySettings>(defaultCompany);
     const [printTemplate, setPrintTemplate] = useState("classic");
 
-    // Load from localStorage on mount (Simulated persistence)
+    // Load from API on mount
     useEffect(() => {
-        const savedCompany = localStorage.getItem("companySettings");
-        const savedTemplate = localStorage.getItem("printTemplate");
-
-        if (savedCompany) {
+        const fetchSettings = async () => {
             try {
-                const parsed = JSON.parse(savedCompany);
-                // Ensure logoUrl is not overwritten by empty string from old cache
-                if (!parsed.logoUrl) {
-                    parsed.logoUrl = defaultCompany.logoUrl;
+                const res = await fetch('/api/settings');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && data.settings) {
+                        // Merge defaults to ensure no missing fields if DB is partial
+                        if (data.settings.companySettings) {
+                            setCompanySettings(prev => ({ ...prev, ...data.settings.companySettings }));
+                        }
+                        if (data.settings.printTemplate) {
+                            setPrintTemplate(data.settings.printTemplate);
+                        }
+                    }
                 }
-                setCompanySettings({ ...defaultCompany, ...parsed });
-            } catch (e) { }
-        }
-        if (savedTemplate) {
-            setPrintTemplate(savedTemplate);
-        }
+            } catch (error) {
+                console.error("Failed to load settings:", error);
+            }
+        };
+        fetchSettings();
     }, []);
 
-    const updateCompanySettings = (newSettings: Partial<CompanySettings>) => {
-        setCompanySettings((prev) => {
-            const updated = { ...prev, ...newSettings };
-            localStorage.setItem("companySettings", JSON.stringify(updated));
-            return updated;
-        });
+    const updateCompanySettings = async (newSettings: Partial<CompanySettings>) => {
+        const updated = { ...companySettings, ...newSettings };
+        setCompanySettings(updated);
+
+        try {
+            const res = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ companySettings: updated })
+            });
+            if (!res.ok) throw new Error("Save failed");
+        } catch (e) {
+            console.error("Save failed", e);
+            throw e;
+        }
     };
 
     const handleSetTemplate = (t: string) => {
         setPrintTemplate(t);
-        localStorage.setItem("printTemplate", t);
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ printTemplate: t })
+        }).catch(e => console.error("Save template failed", e));
     };
 
     return (

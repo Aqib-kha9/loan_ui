@@ -48,6 +48,7 @@ export function mapLoanToFrontend(backendLoan: any): LoanAccount {
     }
 
     return {
+        clientId: client._id || "",
         loanNumber: backendLoan.loanId,
         customerName: `${client.firstName || ''} ${client.lastName || ''}`.trim() || 'Unknown',
         fatherName: "", 
@@ -59,6 +60,7 @@ export function mapLoanToFrontend(backendLoan: any): LoanAccount {
         address: client.address || "",
         permanentAddress: "",
         occupation: "",
+        photoUrl: client.photoUrl || "",
         
         totalLoanAmount: backendLoan.loanAmount,
         disbursedDate: backendLoan.disbursementDate ? new Date(backendLoan.disbursementDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -96,7 +98,6 @@ export function mapLoanToFrontend(backendLoan: any): LoanAccount {
             reference: m.reference || ''
         })) : [],
 
-        repaymentSchedule: repaymentSchedule,
         repaymentSchedule: repaymentSchedule,
         nextPaymentDate: (() => {
             let nextDate = backendLoan.nextPaymentDate 
@@ -144,7 +145,6 @@ export function mapLoanToFrontend(backendLoan: any): LoanAccount {
         aadharNo: client.aadhar || "",
         panNo: client.pan || "",
         kycStatus: "Verified",
-        photoUrl: client.photoUrl,
 
         guarantorName: "",
         guarantorMobile: "",

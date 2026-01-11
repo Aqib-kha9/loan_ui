@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
     DollarSign,
@@ -26,62 +27,22 @@ import {
     Pie,
     Cell
 } from "recharts";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// --- Mock Data ---
-
-const collectionData = [
-    { name: "Jul", value: 35 },
-    { name: "Aug", value: 42 },
-    { name: "Sep", value: 38 },
-    { name: "Oct", value: 55 },
-    { name: "Nov", value: 48 },
-    { name: "Dec", value: 65 },
-];
-
-const loanStatusData = [
-    { name: "Active", value: 65, color: "var(--chart-1)" },
-    { name: "Closed", value: 25, color: "var(--chart-2)" },
-    { name: "Pending", value: 5, color: "var(--chart-3)" },
-    { name: "NPA", value: 5, color: "var(--chart-4)" },
-];
-
-const recentActivity = [
-    {
-        id: 1,
-        type: "disbursal",
-        customer: "Rajesh Kumar",
-        amount: "50,000",
-        date: "Today, 10:42 AM",
-        status: "Success",
-    },
-    {
-        id: 2,
-        type: "payment",
-        customer: "Sarah Khan",
-        amount: "12,500",
-        date: "Today, 09:15 AM",
-        status: "Received",
-    },
-    {
-        id: 3,
-        type: "payment",
-        customer: "Amit Patel",
-        amount: "8,200",
-        date: "Yesterday",
-        status: "Received",
-    },
-    {
-        id: 4,
-        type: "disbursal",
-        customer: "Tech Solutions Ltd",
-        amount: "2.0 L",
-        date: "Yesterday",
-        status: "Processing",
-    },
-];
+// --- Types ---
+type DashboardStats = {
+    totalDisbursed: number;
+    activeCustomers: number;
+    collectionRate: string;
+    npaAmount: number;
+    recentActivities: any[];
+    collectionTrend: { name: string; value: number }[];
+    portfolioStatus: { name: string; value: number; color: string }[];
+};
 
 // --- Components ---
 
@@ -150,13 +111,137 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { PERMISSIONS } from "@/lib/constants/permissions";
 import AccessDenied from "@/components/auth/access-denied";
 
-export default function DashboardPage() {
-    const { checkPermission, isLoading } = useAuth();
+function DashboardSkeleton() {
+    return (
+        <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-1rem)] bg-muted/10 flex flex-col overflow-hidden">
+            {/* Header Skeleton */}
+            <div className="h-12 md:h-16 border-b border-border/50 flex items-center justify-between px-6 bg-white shrink-0 dark:bg-zinc-950 sticky top-0 z-30">
+                <div className="flex items-center gap-4">
+                    <Skeleton className="h-10 w-10 rounded-xl" />
+                    <div className="space-y-2">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-3 w-32" />
+                    </div>
+                </div>
+                <div className="flex gap-3">
+                    <Skeleton className="h-9 w-24 hidden md:block" />
+                    <Skeleton className="h-9 w-24 hidden sm:block" />
+                    <Skeleton className="h-9 w-32" />
+                </div>
+            </div>
 
-    if (isLoading) return null;
+            {/* Content Skeleton */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 md:space-y-6">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                    {[...Array(4)].map((_, i) => (
+                        <div key={i} className="bg-white dark:bg-zinc-900/50 p-4 rounded-2xl border border-black/5 dark:border-white/10 space-y-4">
+                            <div className="flex justify-between">
+                                <Skeleton className="h-4 w-20" />
+                                <Skeleton className="h-10 w-10 rounded-xl" />
+                            </div>
+                            <Skeleton className="h-8 w-24" />
+                            <Skeleton className="h-6 w-32 rounded-lg" />
+                        </div>
+                    ))}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="col-span-1 lg:col-span-2 bg-white dark:bg-zinc-900/50 p-6 rounded-2xl border border-black/5 dark:border-white/10">
+                        <div className="flex items-center justify-between mb-8">
+                            <div className="space-y-2">
+                                <Skeleton className="h-5 w-32" />
+                                <Skeleton className="h-3 w-48" />
+                            </div>
+                            <Skeleton className="h-6 w-6 rounded-full" />
+                        </div>
+                        <Skeleton className="h-[200px] w-full rounded-xl" />
+                    </div>
+                    <div className="bg-white dark:bg-zinc-900/50 p-6 rounded-2xl border border-black/5 dark:border-white/10">
+                        <div className="space-y-2 mb-6">
+                            <Skeleton className="h-5 w-24" />
+                            <Skeleton className="h-3 w-36" />
+                        </div>
+                        <div className="flex justify-center mb-8">
+                            <Skeleton className="h-[150px] w-[150px] rounded-full" />
+                        </div>
+                        <div className="space-y-3">
+                            {[...Array(4)].map((_, i) => (
+                                <div key={i} className="flex justify-between items-center">
+                                    <div className="flex gap-2 items-center">
+                                        <Skeleton className="h-3 w-3 rounded-full" />
+                                        <Skeleton className="h-3 w-16" />
+                                    </div>
+                                    <Skeleton className="h-3 w-8" />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900/50 p-6 rounded-2xl border border-black/5 dark:border-white/10">
+                    <div className="flex justify-between mb-6">
+                        <div className="space-y-2">
+                            <Skeleton className="h-5 w-32" />
+                            <Skeleton className="h-3 w-24" />
+                        </div>
+                        <Skeleton className="h-8 w-20 rounded-lg" />
+                    </div>
+                    <div className="space-y-4">
+                        {[...Array(3)].map((_, i) => (
+                            <div key={i} className="flex justify-between items-center">
+                                <div className="flex gap-4 items-center">
+                                    <Skeleton className="h-10 w-10 rounded-xl" />
+                                    <div className="space-y-2">
+                                        <Skeleton className="h-4 w-32" />
+                                        <Skeleton className="h-3 w-20" />
+                                    </div>
+                                </div>
+                                <Skeleton className="h-4 w-16" />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export default function DashboardPage() {
+    const { checkPermission, isLoading: authLoading } = useAuth();
+    const [stats, setStats] = useState<DashboardStats | null>(null);
+    const [statsLoading, setStatsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            if (authLoading || !checkPermission(PERMISSIONS.VIEW_DASHBOARD)) return;
+            try {
+                const res = await fetch('/api/dashboard/stats');
+                const data = await res.json();
+                if (data.success) {
+                    setStats(data.stats);
+                }
+            } catch (err) {
+                console.error("Failed to fetch dash stats", err);
+            } finally {
+                setStatsLoading(false);
+            }
+        };
+        fetchStats();
+    }, [authLoading, checkPermission]);
+
+    if (authLoading || statsLoading) {
+        return <DashboardSkeleton />;
+    }
+
     if (!checkPermission(PERMISSIONS.VIEW_DASHBOARD)) {
         return <AccessDenied message="You do not have permission to view the analytics dashboard." />;
     }
+
+    if (!stats) return null;
+
+    const collectionData = stats.collectionTrend;
+    const loanStatusData = stats.portfolioStatus;
+    const recentActivityLogs = stats.recentActivities;
 
     return (
         <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-1rem)] bg-muted/10 flex flex-col overflow-hidden">
@@ -174,22 +259,28 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <Link href="/statements">
-                        <Button variant="ghost" className="h-9 gap-2 text-xs font-semibold text-muted-foreground hidden md:flex hover:bg-muted/50">
-                            <FileText className="h-4 w-4" /> Reports
-                        </Button>
-                    </Link>
+                    {checkPermission(PERMISSIONS.VIEW_REPORTS) && (
+                        <Link href="/statements">
+                            <Button variant="ghost" className="h-9 gap-2 text-xs font-semibold text-muted-foreground hidden md:flex hover:bg-muted/50">
+                                <FileText className="h-4 w-4" /> Reports
+                            </Button>
+                        </Link>
+                    )}
                     <div className="h-5 w-[1px] bg-border mx-1 hidden md:block" />
-                    <Link href="/clients">
-                        <Button variant="outline" className="h-9 gap-2 text-xs font-bold border-dashed hidden sm:flex">
-                            <Users className="h-4 w-4" /> Add Client
-                        </Button>
-                    </Link>
-                    <Link href="/loans/new">
-                        <Button className="h-9 gap-2 text-xs font-bold shadow-md shadow-primary/20 hover:shadow-lg transition-all">
-                            <Briefcase className="h-4 w-4" /> New Disbursal
-                        </Button>
-                    </Link>
+                    {checkPermission(PERMISSIONS.CREATE_CLIENT) && (
+                        <Link href="/clients">
+                            <Button variant="outline" className="h-9 gap-2 text-xs font-bold border-dashed hidden sm:flex">
+                                <Users className="h-4 w-4" /> Add Client
+                            </Button>
+                        </Link>
+                    )}
+                    {checkPermission(PERMISSIONS.CREATE_LOAN) && (
+                        <Link href="/loans/new">
+                            <Button className="h-9 gap-2 text-xs font-bold shadow-md shadow-primary/20 hover:shadow-lg transition-all">
+                                <Briefcase className="h-4 w-4" /> New Disbursal
+                            </Button>
+                        </Link>
+                    )}
                 </div>
             </div>
 
@@ -200,32 +291,32 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
                     <StatCard
                         title="Disbursed"
-                        value="₹42.35 L"
-                        trend="+12%"
+                        value={`₹${(stats.totalDisbursed / 100000).toFixed(2)} L`}
+                        trend="+100%"
                         trendUp={true}
                         icon={DollarSign}
                         className="p-4 rounded-2xl"
                     />
                     <StatCard
                         title="Active Customers"
-                        value="2,350"
-                        trend="+48"
+                        value={stats.activeCustomers.toLocaleString()}
+                        trend="+0"
                         trendUp={true}
                         icon={Users}
                         className="p-4 rounded-2xl"
                     />
                     <StatCard
                         title="Collection"
-                        value="94.2%"
-                        trend="-1.4%"
-                        trendUp={false}
+                        value={`${stats.collectionRate}%`}
+                        trend="Real-time"
+                        trendUp={true}
                         icon={CreditCard}
                         className="p-4 rounded-2xl"
                     />
                     <StatCard
                         title="NPA / Overdue"
-                        value="₹1.45 L"
-                        trend="12 Accs"
+                        value={`₹${(stats.npaAmount / 100000).toFixed(2)} L`}
+                        trend="Immediate"
                         trendUp={false}
                         icon={Activity}
                         className="p-4 rounded-2xl"
@@ -300,47 +391,51 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Recent Activity */}
-                <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 dark:bg-zinc-900/50 dark:ring-white/10">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h3 className="font-semibold text-sm">Recent Activity</h3>
-                            <p className="text-[10px] text-muted-foreground">Latest movements</p>
+                {checkPermission(PERMISSIONS.VIEW_ACTIVITY_LOG) && (
+                    <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 dark:bg-zinc-900/50 dark:ring-white/10">
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 className="font-semibold text-sm">Recent Activity</h3>
+                                <p className="text-[10px] text-muted-foreground">Latest movements</p>
+                            </div>
+                            <Button variant="ghost" size="sm" asChild className="h-7 text-xs">
+                                <Link href="/activity">View All</Link>
+                            </Button>
                         </div>
-                        <Button variant="ghost" size="sm" asChild className="h-7 text-xs">
-                            <Link href="/statements">View All</Link>
-                        </Button>
-                    </div>
 
-                    <div className="space-y-1">
-                        {recentActivity.map((activity) => (
-                            <div key={activity.id} className="group flex items-center justify-between rounded-xl p-2 transition-colors hover:bg-muted/50 cursor-default">
-                                <div className="flex items-center gap-3">
-                                    <div className={cn(
-                                        "flex h-8 w-8 items-center justify-center rounded-lg border transition-colors",
-                                        activity.type === 'disbursal'
-                                            ? "bg-blue-50 border-blue-100 text-blue-600 dark:bg-blue-900/20 dark:border-blue-900/50"
-                                            : "bg-emerald-50 border-emerald-100 text-emerald-600 dark:bg-emerald-900/20 dark:border-emerald-900/50"
-                                    )}>
-                                        {activity.type === 'disbursal' ? <Briefcase className="h-3.5 w-3.5" /> : <DollarSign className="h-3.5 w-3.5" />}
+                        <div className="space-y-1">
+                            {recentActivityLogs.length === 0 ? (
+                                <p className="text-center py-8 text-xs text-muted-foreground italic">No recent activity detected.</p>
+                            ) : recentActivityLogs.map((activity) => (
+                                <div key={activity._id} className="group flex items-center justify-between rounded-xl p-2 transition-colors hover:bg-muted/50 cursor-default">
+                                    <div className="flex items-center gap-3">
+                                        <div className={cn(
+                                            "flex h-8 w-8 items-center justify-center rounded-lg border transition-colors",
+                                            activity.type === 'Loan'
+                                                ? "bg-blue-50 border-blue-100 text-blue-600 dark:bg-blue-900/20 dark:border-blue-900/50"
+                                                : "bg-emerald-50 border-emerald-100 text-emerald-600 dark:bg-emerald-900/20 dark:border-emerald-900/50"
+                                        )}>
+                                            {activity.type === 'Loan' ? <Briefcase className="h-3.5 w-3.5" /> : <DollarSign className="h-3.5 w-3.5" />}
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-xs text-foreground truncate max-w-[150px]">{activity.entityName || 'System'}</p>
+                                            <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                                {activity.action || activity.type}
+                                                <span className="opacity-50">•</span>
+                                                {format(new Date(activity.timestamp), 'h:mm a, MMM dd')}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p className="font-bold text-xs text-foreground">{activity.customer}</p>
-                                        <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                            {activity.type === 'disbursal' ? 'Disbursed' : 'Payment'}
-                                            <span className="opacity-50">•</span>
-                                            {activity.date}
+                                    <div className="text-right">
+                                        <p className={cn("font-bold text-sm font-mono", activity.amount && activity.amount < 0 ? "text-rose-600" : "text-emerald-600")}>
+                                            {activity.amount ? (activity.amount < 0 ? '-' : '+') + '₹' + Math.abs(activity.amount).toLocaleString() : '-'}
                                         </p>
                                     </div>
                                 </div>
-                                <div className="text-right">
-                                    <p className={cn("font-bold text-sm font-mono", activity.type === 'disbursal' ? "text-foreground" : "text-emerald-600")}>
-                                        {activity.type === 'disbursal' ? '-' : '+'}₹{activity.amount}
-                                    </p>
-                                </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Bottom Spacer for Mobile */}
                 <div className="h-12 md:hidden"></div>

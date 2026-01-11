@@ -27,7 +27,7 @@ interface LedgerState {
     accruedInterest: number;
     totalPaidInterest: number;
     totalPaidPrincipal: number;
-    status: 'active' | 'closed' | 'defaulted';
+    status: 'Active' | 'Closed' | 'NPA' | 'Rejected';
 }
 
 export const recalculateLedger = async (loanId: string) => {
@@ -46,7 +46,7 @@ export const recalculateLedger = async (loanId: string) => {
         accruedInterest: 0,
         totalPaidInterest: 0,
         totalPaidPrincipal: 0,
-        status: 'active'
+        status: 'Active'
     };
     
     // Sort Schedule for checking overdue
@@ -204,9 +204,9 @@ export const recalculateLedger = async (loanId: string) => {
              
              // Auto-Close
              if (currentState.outstandingPrincipal < 1) {
-                 currentState.status = 'closed';
+                 currentState.status = 'Closed';
              } else {
-                 currentState.status = 'active';
+                 currentState.status = 'Active';
              }
         }
     }
@@ -219,6 +219,7 @@ export const recalculateLedger = async (loanId: string) => {
          loan.status = currentState.status; 
     }
     
+
     await loan.save();
 
     return {

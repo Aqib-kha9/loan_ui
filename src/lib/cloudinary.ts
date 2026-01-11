@@ -17,3 +17,23 @@ export const uploadToCloudinary = async (fileString: string): Promise<string> =>
     throw new Error('Image upload failed');
   }
 };
+
+export const deleteFromCloudinary = async (imageUrl: string): Promise<void> => {
+  try {
+    if (!imageUrl.includes('cloudinary.com')) return;
+
+    // Extract public_id from URL
+    // URL format: .../upload/v12345678/folder/filename.jpg
+    const parts = imageUrl.split('/');
+    const filename = parts.pop()?.split('.')[0]; // filename without extension
+    const folder = parts.includes('loan_applicants') ? 'loan_applicants' : null;
+    
+    if (filename) {
+        const publicId = folder ? `${folder}/${filename}` : filename;
+        await cloudinary.uploader.destroy(publicId);
+    }
+  } catch (error) {
+    console.error("Cloudinary delete error:", error);
+    // Suppress delete errors to avoid blocking main flow
+  }
+};

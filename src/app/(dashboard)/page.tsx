@@ -230,7 +230,13 @@ function QuickPaymentContent() {
       const data = await response.json();
 
       if (!response.ok) {
-        toast.error(data.error || "Payment failed", { id: toastId });
+        const errorMsg = data.error || "Payment failed";
+        toast.error(errorMsg, { id: toastId });
+
+        // If loan is closed or settled, force refresh to update UI state
+        if (errorMsg.includes("Closed") || errorMsg.includes("fully settled")) {
+          setTimeout(() => window.location.reload(), 1500);
+        }
         return;
       }
 
@@ -648,12 +654,14 @@ function QuickPaymentContent() {
                         {/* 3. Outstanding Summary (Dynamic) */}
                         <div className="bg-red-50/50 dark:bg-red-950/10 p-4 rounded-lg border border-red-100 dark:border-red-900/30 space-y-3">
                           <div className="flex justify-between items-center text-sm">
-                            <span className="text-muted-foreground">Principal Balance</span>
-                            <span className="font-semibold">₹{(selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount).toLocaleString()}</span>
+                            <span className="text-muted-foreground">Outstanding Balance</span>
+                            <span className="font-semibold">
+                              ₹{(ledgerHistory.length > 0 ? ledgerHistory[ledgerHistory.length - 1].balance : (selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount)).toLocaleString()}
+                            </span>
                           </div>
 
                           {/* Accrued Interest (Only for Reducing/Indefinite) */}
-                          {(selectedLoan.interestType === 'Reducing' || selectedLoan.indefiniteTenure) && (
+                          {(selectedLoan.interestType === 'Reducing' || selectedLoan.indefiniteTenure) && (selectedLoan.accumulatedInterest || 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-muted-foreground">Accrued Interest</span>
                               <span className="font-semibold text-blue-600">+ ₹{(selectedLoan.accumulatedInterest || 0).toLocaleString()}</span>
@@ -671,7 +679,7 @@ function QuickPaymentContent() {
                           <div className="border-t border-red-200/50 dark:border-red-800/30 pt-2 flex justify-between items-center">
                             <span className="text-xs font-bold text-red-700 uppercase tracking-wider">Total to Close</span>
                             <span className="text-lg font-bold text-red-700">
-                              ₹{((selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount) + (selectedLoan.accumulatedInterest || 0) + (selectedLoan.outstandingPenalty || 0)).toLocaleString()}
+                              ₹{Math.max(0, ledgerHistory.length > 0 ? ledgerHistory[ledgerHistory.length - 1].balance : (selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount)).toLocaleString()}
                             </span>
                           </div>
                         </div>
@@ -758,7 +766,7 @@ function QuickPaymentContent() {
                       isSplitMode ? "flex-col items-end h-auto gap-1" : "flex-col md:flex-row items-stretch md:items-center"
                     )}>
 
-                      {selectedLoan.status !== 'Closed' && selectedLoan.status !== 'Rejected' ? (
+                      {selectedLoan.status !== 'Closed' && selectedLoan.status !== 'Rejected' && (!ledgerHistory.length || ledgerHistory[ledgerHistory.length - 1].balance > 0) ? (
                         <>
                           {/* Payment Date (Backdated) */}
                           <div className="flex items-center gap-1 w-full md:w-auto border-b md:border-b-0 border-border/50 pb-1 md:pb-0 mb-1 md:mb-0 shrink-0">
@@ -844,13 +852,16 @@ function QuickPaymentContent() {
                             <Button
                               variant="secondary"
                               size="sm"
-                              disabled={isSubmitting}
+                              disabled={isSubmitting || (selectedLoan.status as string) === 'Closed' || (selectedLoan.status as string) === 'Rejected' || (selectedLoan.currentPrincipal ?? 1) <= 0}
                               className="h-7 px-3 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:text-red-400 dark:hover:bg-red-900/20"
                               onClick={() => {
-                                const totalDue =
-                                  (selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount) +
-                                  (selectedLoan.accumulatedInterest || 0) +
-                                  (selectedLoan.outstandingPenalty || 0);
+                                // Calculate Total Due based on LEDGER BALANCE (Most Accurate)
+                                const lastEntry = ledgerHistory.length > 0 ? ledgerHistory[ledgerHistory.length - 1] : null;
+                                // If ledger exists, use its balance. If not, fallback to schema calculation.
+                                // We iterate to find the last 'balance' entry.
+                                const ledgerBalance = lastEntry ? lastEntry.balance : (selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount);
+
+                                const totalDue = Math.max(0, ledgerBalance);
 
                                 setPayments([{ mode: "cash", amount: totalDue.toString() }]);
                                 setNarrative("Loan Preclosure / Foreclosure");
@@ -860,7 +871,12 @@ function QuickPaymentContent() {
                               {isSubmitting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Preclose"}
                             </Button>
 
-                            <Button size="sm" disabled={isSubmitting} className={cn("text-xs font-bold shadow-sm", isSplitMode ? "ml-auto h-7 px-4" : "h-7 px-3")} onClick={handlePayment}>
+                            <Button
+                              size="sm"
+                              disabled={isSubmitting || (selectedLoan.status as string) === 'Closed' || (selectedLoan.status as string) === 'Rejected' || (selectedLoan.currentPrincipal ?? 1) <= 0}
+                              className={cn("text-xs font-bold shadow-sm", isSplitMode ? "ml-auto h-7 px-4" : "h-7 px-3")}
+                              onClick={handlePayment}
+                            >
                               {isSubmitting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
                               Collect {isSplitMode && "All"}
                             </Button>
@@ -872,86 +888,87 @@ function QuickPaymentContent() {
                           Loan is {selectedLoan.status}
                         </div>
                       )}
-                    </>
-                    ) : (
-                    /* Permission Denied State */
-                    <p className="text-xs text-muted-foreground italic pr-4">You do not have permission to collect payments.</p>
-                )}
-                  </div>
-              </div>
-            </>
-            ) : (
-            /* EMPTY STATE */
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-muted/5">
-              <div className="relative mb-6 group">
-                <div className="absolute inset-0 bg-primary/10 blur-3xl opacity-20 group-hover:opacity-40 transition-opacity" />
-                <div className="relative h-24 w-24 rounded-2xl bg-white border shadow-sm flex items-center justify-center dark:bg-zinc-900">
-                  <Wallet className="h-10 w-10 text-primary/80" />
-                </div>
-              </div>
-              <h3 className="text-xl font-bold tracking-tight text-foreground">Select Customer</h3>
-              <p className="text-muted-foreground max-w-xs mt-2 text-sm">
-                Select from the list to view Ledger & take payment.
-              </p>
-            </div>
-        )}
-            {/* Receipt Dialog */}
-            <Dialog open={showReceipt} onOpenChange={(open) => {
-              setShowReceipt(open);
-              if (!open) {
-                // User closed the receipt. NOW we refresh to show updated ledger.
-                window.location.reload();
-              }
-            }}>
-              <DialogContent className="max-w-[fit-content] w-auto p-0 bg-transparent border-none shadow-none text-transparent">
-                <DialogTitle className="sr-only">Receipt Preview</DialogTitle>
-
-                <div className="relative bg-white dark:bg-zinc-950 text-foreground rounded-lg shadow-2xl overflow-hidden max-w-[95vw] md:max-w-5xl w-full flex flex-col">
-                  <div className="flex justify-end p-4 border-b bg-muted/20 print:hidden gap-3">
-                    <Button
-                      onClick={() => {
-                        const originalTitle = document.title;
-                        document.title = `Receipt_${selectedLoan?.loanNumber}_${selectedLoan?.customerName?.replace(/\s+/g, '_')}`;
-                        handlePrint();
-                        setTimeout(() => document.title = originalTitle, 1000);
-                      }}
-                      variant="outline"
-                      className="gap-2 font-bold"
-                    >
-                      <Download className="h-4 w-4" /> Save PDF
-                    </Button>
-                    <Button onClick={handlePrint} className="gap-2 font-bold shadow-sm">
-                      <Printer className="h-4 w-4" /> Print
-                    </Button>
-                  </div>
-
-                  <div className="p-0 overflow-auto max-h-[85vh] bg-gray-100/50 dark:bg-zinc-900/50 flex justify-center">
-                    <div className="origin-top scale-[0.6] sm:scale-[0.6]">
-                      <div ref={componentRef} className="shadow-2xl">
-                        <TemplateComponent
-                          data={{
-                            customerName: selectedLoan?.customerName || '',
-                            loanAccountNo: selectedLoan?.loanNumber || '',
-                            amount: lastPaymentData.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toString(),
-                            paymentMode: lastPaymentData.map(p => p.mode.toUpperCase()).join(' + '),
-                          }}
-                          company={companySettings}
-                        />
-                      </div>
                     </div>
+                  </>
+                ) : (
+                  /* Permission Denied State */
+                  <p className="text-xs text-muted-foreground italic pr-4">You do not have permission to collect payments.</p>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          /* EMPTY STATE */
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-muted/5">
+            <div className="relative mb-6 group">
+              <div className="absolute inset-0 bg-primary/10 blur-3xl opacity-20 group-hover:opacity-40 transition-opacity" />
+              <div className="relative h-24 w-24 rounded-2xl bg-white border shadow-sm flex items-center justify-center dark:bg-zinc-900">
+                <Wallet className="h-10 w-10 text-primary/80" />
+              </div>
+            </div>
+            <h3 className="text-xl font-bold tracking-tight text-foreground">Select Customer</h3>
+            <p className="text-muted-foreground max-w-xs mt-2 text-sm">
+              Select from the list to view Ledger & take payment.
+            </p>
+          </div>
+        )}
+        {/* Receipt Dialog */}
+        <Dialog open={showReceipt} onOpenChange={(open) => {
+          setShowReceipt(open);
+          if (!open) {
+            // User closed the receipt. NOW we refresh to show updated ledger.
+            window.location.reload();
+          }
+        }}>
+          <DialogContent className="max-w-[fit-content] w-auto p-0 bg-transparent border-none shadow-none text-transparent">
+            <DialogTitle className="sr-only">Receipt Preview</DialogTitle>
+
+            <div className="relative bg-white dark:bg-zinc-950 text-foreground rounded-lg shadow-2xl overflow-hidden max-w-[95vw] md:max-w-5xl w-full flex flex-col">
+              <div className="flex justify-end p-4 border-b bg-muted/20 print:hidden gap-3">
+                <Button
+                  onClick={() => {
+                    const originalTitle = document.title;
+                    document.title = `Receipt_${selectedLoan?.loanNumber}_${selectedLoan?.customerName?.replace(/\s+/g, '_')}`;
+                    handlePrint();
+                    setTimeout(() => document.title = originalTitle, 1000);
+                  }}
+                  variant="outline"
+                  className="gap-2 font-bold"
+                >
+                  <Download className="h-4 w-4" /> Save PDF
+                </Button>
+                <Button onClick={handlePrint} className="gap-2 font-bold shadow-sm">
+                  <Printer className="h-4 w-4" /> Print
+                </Button>
+              </div>
+
+              <div className="p-0 overflow-auto max-h-[85vh] bg-gray-100/50 dark:bg-zinc-900/50 flex justify-center">
+                <div className="origin-top scale-[0.6] sm:scale-[0.6]">
+                  <div ref={componentRef} className="shadow-2xl">
+                    <TemplateComponent
+                      data={{
+                        customerName: selectedLoan?.customerName || '',
+                        loanAccountNo: selectedLoan?.loanNumber || '',
+                        amount: lastPaymentData.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toString(),
+                        paymentMode: lastPaymentData.map(p => p.mode.toUpperCase()).join(' + '),
+                      }}
+                      company={companySettings}
+                    />
                   </div>
                 </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-      </div >
-      );
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div >
+  );
 }
 
-      export default function QuickPaymentPage() {
+export default function QuickPaymentPage() {
   return (
-      <Suspense fallback={<div className="h-screen w-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
-        <QuickPaymentContent />
-      </Suspense>
-      );
+    <Suspense fallback={<div className="h-screen w-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
+      <QuickPaymentContent />
+    </Suspense>
+  );
 }

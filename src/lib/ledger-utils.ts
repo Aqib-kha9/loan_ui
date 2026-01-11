@@ -11,6 +11,8 @@ export interface LedgerEntry {
     refNo?: string;
     principalComponent?: number;
     interestComponent?: number;
+    linkedId?: string;       // ID of transaction or schedule item
+    linkedType?: "txn" | "schedule" | "meta"; // Where it comes from
 }
 
 export function generateLedger(loan: LoanAccount): LedgerEntry[] {
@@ -27,7 +29,8 @@ export function generateLedger(loan: LoanAccount): LedgerEntry[] {
         debit: loanAmount,
         credit: 0,
         balance: 0, // Placeholder
-        refNo: "-"
+        refNo: "-",
+        linkedType: "meta"
     });
 
     // 2. Collect Interest Accruals (From Schedule)
@@ -50,7 +53,8 @@ export function generateLedger(loan: LoanAccount): LedgerEntry[] {
                      credit: 0,
                      balance: 0, 
                      refNo: "-",
-                     interestComponent: totalInterest
+                     interestComponent: totalInterest,
+                     linkedType: "schedule" // Mapping to first schedule item usually
                  });
              }
         } else {
@@ -72,7 +76,9 @@ export function generateLedger(loan: LoanAccount): LedgerEntry[] {
                         credit: 0,
                         balance: 0, 
                         refNo: "-",
-                        interestComponent: item.interestComponent
+                        interestComponent: item.interestComponent,
+                        linkedId: (item as any)._id,
+                        linkedType: "schedule"
                     });
                 }
             });
@@ -130,7 +136,8 @@ export function generateLedger(loan: LoanAccount): LedgerEntry[] {
             credit: loan.emiAmount,
             balance: 0,
             refNo: "ADVANCE",
-            interestComponent: loan.emiAmount
+            interestComponent: loan.emiAmount,
+            linkedType: "meta"
         });
     }
 
@@ -146,7 +153,9 @@ export function generateLedger(loan: LoanAccount): LedgerEntry[] {
                 credit: txn.amount,
                 balance: 0, // Placeholder
                 refNo: txn.refNo || (txn.txnId ? txn.txnId.split('-')[1] : '-'),
-                interestComponent: txn.interestComponent // Pass it through
+                interestComponent: txn.interestComponent, // Pass it through
+                linkedId: txn.id || (txn as any).txnId,
+                linkedType: "txn"
             });
         });
     }
