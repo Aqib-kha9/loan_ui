@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const { hash } = require('bcryptjs');
+require('dotenv').config({ path: '.env.local' }); // Try .env.local first
+require('dotenv').config(); // Fallback to .env
 
 // Minimal Schemas for Seeding
 const RoleSchema = new mongoose.Schema({
@@ -16,7 +18,7 @@ const UserSchema = new mongoose.Schema({
 const Role = mongoose.models.Role || mongoose.model('Role', RoleSchema);
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
 
-const MONGODB_URI = 'mongodb://localhost:27017/loanerp';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/loanerp';
 
 const PERMISSIONS = {
     // User Management
@@ -91,13 +93,13 @@ async function seed() {
         roleMap[r.name] = roleDoc._id;
         console.log(`Synced Role: ${r.name}`);
     }
-
+    //superadmin@fincorperp.com
     // 2. Create User
     let superAdminUser = await User.findOne({ email: 'superadmin@fincorperp.com' });
     if (!superAdminUser) {
       const password = await hash('admin123', 12);
       superAdminUser = await User.create({
-        email: 'superadmin@fincorperp.com',
+        email: 'admin@patnifinance.com',
         name: 'System Root',
         password: password,
         role: roleMap['Admin']
