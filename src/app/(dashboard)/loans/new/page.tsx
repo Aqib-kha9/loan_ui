@@ -115,8 +115,10 @@ export default function NewLoanPage() {
         loanAmount: "50000",
         interestRate: "12",
         tenureMonths: "12",
+        tenureUnit: "Months", // New
         processingFeePercent: "1",
         repaymentFrequency: "Monthly",
+
         startDate: new Date().toISOString().split("T")[0],
 
         // Payment Mode Splits
@@ -124,6 +126,12 @@ export default function NewLoanPage() {
             { type: "Cash", amount: "", reference: "" }
         ],
         indefiniteTenure: false, // New field
+
+        // Lifecycle 2.0
+        gracePeriodDays: "0",
+        penaltyConfig: { type: "Fixed", value: "0" },
+        holidayHandling: "Ignore",
+        advancePaymentAction: "ReduceNextEMI"
     });
 
     const [calculations, setCalculations] = useState<{
@@ -236,16 +244,23 @@ export default function NewLoanPage() {
             const periodicRate = annualRate / frequencyDivisor / 100;
 
             // Calculate ACTUAL Number of Installments (N_effective)
-            // The input 'N' is always in "Months" (from the UI field tenureMonths)
-            // We need to convert this Duration into Number of Installments
-            let numberOfInstallments = N; // Default for Monthly
-            if (formData.repaymentFrequency === "Weekly") {
-                // Months -> Weeks: (Months / 12) * 52
-                numberOfInstallments = (N / 12) * 52;
-            }
-            if (formData.repaymentFrequency === "Daily") {
-                // Months -> Days: (Months / 12) * 365 (or just N * 30 for simpler math, but standard is year based)
-                numberOfInstallments = (N / 12) * 365;
+            // The input 'N' is tenure duration
+            const tUnit = formData.tenureUnit || 'Months';
+            let numberOfInstallments = N;
+
+            if (formData.repaymentFrequency === 'Weekly') {
+                if (tUnit === 'Months') numberOfInstallments = (N / 12) * 52;
+                else if (tUnit === 'Weeks') numberOfInstallments = N;
+                else if (tUnit === 'Days') numberOfInstallments = N / 7;
+            } else if (formData.repaymentFrequency === 'Daily') {
+                if (tUnit === 'Months') numberOfInstallments = (N / 12) * 365;
+                else if (tUnit === 'Weeks') numberOfInstallments = N * 7;
+                else if (tUnit === 'Days') numberOfInstallments = N;
+            } else {
+                // Monthly
+                if (tUnit === 'Months') numberOfInstallments = N;
+                else if (tUnit === 'Weeks') numberOfInstallments = N / 4.33;
+                else if (tUnit === 'Days') numberOfInstallments = N / 30;
             }
 
             numberOfInstallments = Math.ceil(numberOfInstallments); // Round up to whole installment
@@ -268,7 +283,11 @@ export default function NewLoanPage() {
                 // EMI Based
                 if (formData.interestType === "Flat") {
                     // Total Interest = P * AnnualRate * (Tenure in Years)
-                    totalInterest = (P * annualRate * (N / 12)) / 100; // Keep tenure in years for flat
+                    let tenureInYears = N / 12; // Default if Months
+                    if (tUnit === 'Weeks') tenureInYears = N / 52;
+                    if (tUnit === 'Days') tenureInYears = N / 365;
+
+                    totalInterest = (P * annualRate * tenureInYears) / 100;
                     totalPayable = P + totalInterest;
                     emi = totalPayable / numberOfInstallments;
                 } else {
@@ -301,7 +320,16 @@ export default function NewLoanPage() {
         } else {
             setCalculations({ emi: 0, totalInterest: 0, totalPayable: 0, processingFeeAmount: 0, netDisbursal: 0, firstMonthInterest: 0 });
         }
-    }, [formData.loanAmount, formData.interestRate, formData.tenureMonths, formData.processingFeePercent, formData.interestType, formData.interestRateUnit, formData.loanScheme, formData.interestPaidInAdvance, formData.indefiniteTenure, formData.repaymentFrequency]);
+    }, [formData.loanAmount, formData.interestRate, formData.tenureMonths, formData.processingFeePercent, formData.interestType, formData.interestRateUnit, formData.loanScheme, formData.interestPaidInAdvance, formData.indefiniteTenure, formData.repaymentFrequency, formData.tenureUnit]);
+
+    // Added: Frequency Effect to auto-set Unit
+    useEffect(() => {
+        if (formData.repaymentFrequency === 'Weekly') handleChange('tenureUnit', 'Weeks');
+        else if (formData.repaymentFrequency === 'Daily') handleChange('tenureUnit', 'Days');
+        else if (formData.repaymentFrequency === 'Monthly') handleChange('tenureUnit', 'Months');
+    }, [formData.repaymentFrequency]);
+
+
 
     const handleChange = (field: string, value: string) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -409,10 +437,10 @@ export default function NewLoanPage() {
                 <div className="flex items-center gap-3">
                     <Badge variant="outline" className="text-sm py-1.5 px-4 bg-background/50 border-primary/20 text-primary font-medium shadow-sm backdrop-blur">
                         <CalendarClock className="h-3.5 w-3.5 mr-2" />
-                        {new Date().toLocaleDateString()}
+                        <span suppressHydrationWarning>{new Date().toLocaleDateString('en-GB')}</span>
                     </Badge>
                     <Badge variant="secondary" className="text-sm py-1.5 px-4 font-mono font-medium opacity-80">
-                        ID: APP-{Math.floor(Math.random() * 10000)}
+                        <span suppressHydrationWarning>ID: APP-{Math.floor(Math.random() * 10000)}</span>
                     </Badge>
                 </div>
             </header>
@@ -656,16 +684,28 @@ export default function NewLoanPage() {
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Tenure (Months) <span className="text-red-500">*</span></Label>
-                                    <Input
-                                        type="number"
-                                        className="h-10"
-                                        placeholder={formData.indefiniteTenure ? "Indefinite / No Fixed Tenure" : "Ex. 12"}
-                                        value={formData.indefiniteTenure ? "" : formData.tenureMonths}
-                                        onChange={e => handleChange("tenureMonths", e.target.value)}
-                                        disabled={formData.indefiniteTenure}
-                                        required={!formData.indefiniteTenure}
-                                    />
+                                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Tenure <span className="text-red-500">*</span></Label>
+                                    <div className="flex shadow-sm rounded-md">
+                                        <Input
+                                            type="number"
+                                            className="h-10 rounded-r-none border-r-0 focus-visible:ring-0 focus-visible:border-primary"
+                                            placeholder={formData.indefiniteTenure ? "Unlimited" : "Ex. 12"}
+                                            value={formData.indefiniteTenure ? "" : formData.tenureMonths}
+                                            onChange={e => handleChange("tenureMonths", e.target.value)}
+                                            disabled={formData.indefiniteTenure}
+                                            required={!formData.indefiniteTenure}
+                                        />
+                                        <Select value={formData.tenureUnit} onValueChange={val => handleChange("tenureUnit", val)} disabled={formData.indefiniteTenure}>
+                                            <SelectTrigger className="w-[110px] rounded-l-none bg-muted/50 h-10 border-l border-input">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="Months">Months</SelectItem>
+                                                <SelectItem value="Weeks">Weeks</SelectItem>
+                                                <SelectItem value="Days">Days</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
                                 </div>
 
                                 {formData.loanScheme === 'InterestOnly' && (
@@ -737,7 +777,6 @@ export default function NewLoanPage() {
                             </CardContent>
                         </Card>
 
-                        {/* 3. Disbursement Splits */}
                         <Card className="shadow-sm border-muted-foreground/10 overflow-hidden bg-card/50 backdrop-blur-sm">
                             <CardHeader className="bg-muted/30 pb-4 pt-5 border-b border-border/40 flex flex-row items-center justify-between">
                                 <CardTitle className="flex items-center gap-2.5 text-lg font-semibold text-foreground">
@@ -941,10 +980,18 @@ export default function NewLoanPage() {
                                         loanAmount: "",
                                         interestRate: "",
                                         tenureMonths: "",
+                                        tenureUnit: "Months",
                                         startDate: new Date().toISOString().split('T')[0],
+
                                         processingFeePercent: "1",
                                         paymentModes: [{ type: "Cash", amount: "", reference: "" }],
-                                        indefiniteTenure: false
+                                        indefiniteTenure: false,
+
+                                        // Lifecycle 2.0
+                                        gracePeriodDays: "0",
+                                        penaltyConfig: { type: "Fixed", value: "0" },
+                                        holidayHandling: "Ignore",
+                                        advancePaymentAction: "ReduceNextEMI"
                                     });
                                     setCustomerImage(null);
                                 }}

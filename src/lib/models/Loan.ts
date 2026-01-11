@@ -34,6 +34,12 @@ const LoanSchema = new mongoose.Schema({
         type: Number,
         required: true, // 0 if indefinite
     },
+    tenureUnit: {
+        type: String,
+        enum: ['Months', 'Weeks', 'Days'],
+        default: 'Months',
+    },
+
     indefiniteTenure: {
         type: Boolean,
         default: false,
@@ -62,6 +68,36 @@ const LoanSchema = new mongoose.Schema({
         default: 0,
     },
     
+    // --- Loan Lifecycle 2.0 Config ---
+    gracePeriodDays: {
+        type: Number,
+        default: 0
+    },
+    penaltyConfig: {
+        type: {
+            type: String,
+            enum: ['Fixed', 'Percentage'],
+            default: 'Fixed'
+        },
+        value: { type: Number, default: 0 }
+    },
+    advancePaymentAction: {
+        type: String,
+        enum: ['ReduceNextEMI', 'ReduceTenure', 'KeepInWallet'],
+        default: 'ReduceNextEMI'
+    },
+    holidayHandling: {
+        type: String,
+        enum: ['NextWorkingDay', 'PreviousWorkingDay', 'Ignore'],
+        default: 'Ignore'
+    },
+    
+    // Internal Tracking for Date-Driven Engine
+    dailyInterestRate: { type: Number }, // Calculated and stored for consistency
+    lastAccrualDate: { type: Date },     // For daily accrual tracking
+    accumulatedInterest: { type: Number, default: 0 }, // Unpaid accrued interest
+    
+
     // Calculated Values (Snapshot at creation)
     calculatedEMI: {
         type: Number,
@@ -97,6 +133,11 @@ const LoanSchema = new mongoose.Schema({
     nextPaymentAmount: {
         type: Number,
     },
+    currentPrincipal: {
+        type: Number, // Date-driven outstanding principal
+        default: 0
+    },
+
 
     // Repayment Schedule
     repaymentSchedule: [{
@@ -115,7 +156,7 @@ const LoanSchema = new mongoose.Schema({
         paidDate: Date
     }],
 
-    // Payment Splits
+    // Payment Splits (Disbursement)
     paymentModes: [{
         type: {
             type: String,
@@ -126,6 +167,31 @@ const LoanSchema = new mongoose.Schema({
             required: true
         },
         reference: String
+    }],
+
+    // Transaction History (Repayments)
+    transactions: [{
+        txnId: {
+            type: String,
+            required: true
+        },
+        date: {
+            type: Date,
+            default: Date.now
+        },
+        amount: {
+            type: Number,
+            required: true
+        },
+        type: {
+            type: String,
+            enum: ['EMI', 'Part Payment', 'Closure', 'Fee', 'Penalty'],
+            default: 'EMI'
+        },
+        description: String,
+        reference: String, // e.g., UPI Ref
+        paymentMode: String, // Cash, UPI, etc.
+        balanceAfter: Number
     }],
 
     // Meta

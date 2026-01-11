@@ -2,6 +2,8 @@ import React from "react";
 import { format } from "date-fns";
 import { CompanySettings } from "@/components/providers/settings-provider";
 
+import { numberToWords } from "@/lib/number-to-words";
+
 interface ReceiptProps {
     data: any;
     company: CompanySettings;
@@ -10,19 +12,20 @@ interface ReceiptProps {
 export const ClassicTemplate = ({ data, company }: ReceiptProps) => {
     return (
         <div className="w-[210mm] min-h-[297mm] p-16 border bg-white text-black font-serif mx-auto shadow-2xl flex flex-col box-border">
-            {/* Header */}
-            <div className="text-center border-b-2 border-black pb-8 mb-8">
+            {/* Header: Logo Side-by-Side with Name */}
+            <div className="border-b-2 border-black pb-8 mb-8 flex items-center justify-center gap-8">
                 {company.logoUrl && (
-                    <div className="flex justify-center mb-4">
+                    <div className="flex-shrink-0">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={company.logoUrl} alt="Logo" className="h-24 object-contain" />
+                        <img src={company.logoUrl} alt="Logo" className="h-28 w-28 object-contain" />
                     </div>
                 )}
-                <h1 className="text-5xl font-bold uppercase tracking-wider mb-4">{company.name}</h1>
-                <p className="text-lg font-medium">{company.address}</p>
-                <div className="flex justify-center gap-4 text-sm mt-2">
-
-                    <span>Mob: {company.mobile}</span>
+                <div className="text-center">
+                    <h1 className="text-5xl font-bold uppercase tracking-wider mb-2">{company.name}</h1>
+                    <p className="text-lg font-medium">{company.address}</p>
+                    <div className="flex justify-center gap-4 text-sm mt-2">
+                        <span>Mob: {company.mobile}</span>
+                    </div>
                 </div>
             </div>
 
@@ -32,7 +35,7 @@ export const ClassicTemplate = ({ data, company }: ReceiptProps) => {
                 </div>
                 <div className="text-right">
                     <p className="text-lg"><strong>Receipt Date:</strong> {format(new Date(), "dd MMM yyyy")}</p>
-                    <p className="text-lg"><strong>Receipt No:</strong> #REC-001</p>
+                    <p className="text-lg"><strong>Receipt No:</strong> #REC-{Math.floor(Math.random() * 1000).toString().padStart(3, '0')}</p>
                 </div>
             </div>
 
@@ -61,10 +64,10 @@ export const ClassicTemplate = ({ data, company }: ReceiptProps) => {
                 <tbody>
                     <tr>
                         <td className="border-2 border-black p-6 text-xl">
-                            EMI Payment Received
+                            Payment Received ({data.paymentMode})
                             <br />
                             <span className="text-sm italic font-normal">
-                                Received against EMI for the month of {format(new Date(), "MMMM yyyy")}
+                                Received against {data.loanAccountNo}
                             </span>
                         </td>
                         <td className="border-2 border-black p-6 text-right font-bold text-3xl align-top">
@@ -84,7 +87,7 @@ export const ClassicTemplate = ({ data, company }: ReceiptProps) => {
 
             {/* Words */}
             <div className="mb-16 border-b border-black pb-4 italic text-lg">
-                Amount in words: Rupees {Number(data.amount).toLocaleString('en-IN')} Only
+                Amount in words: Rupees {numberToWords(Number(data.amount))} Only
             </div>
 
             {/* Footer */}

@@ -1,3 +1,15 @@
+export type RepaymentScheduleItem = {
+  installmentNo: number;
+  dueDate: string;
+  amount: number;
+  principalComponent: number;
+  interestComponent: number;
+  balance: number;
+  status: "pending" | "paid" | "partially_paid" | "overdue";
+  paidAmount: number;
+  paidDate?: string;
+};
+
 export type LoanAccount = {
   loanNumber: string;
   customerName: string;
@@ -18,9 +30,36 @@ export type LoanAccount = {
   interestRate: number; 
   interestPaidInAdvance?: boolean; // New
   tenureMonths: number;
+  indefiniteTenure?: boolean; // New
   emisPaid: number;
   status: "Active" | "Closed" | "NPA";
-  loanType: "Personal" | "Business" | "Vehicle"; // New
+  loanType: "Personal" | "Business" | "Vehicle"; 
+  loanScheme?: "EMI" | "InterestOnly" | "Bullet"; 
+  repaymentFrequency?: "Monthly" | "Weekly" | "Daily" | "Yearly"; 
+  interestType?: "Flat" | "Reducing"; // Exposed to frontend
+  interestRateUnit?: string; // New
+  tenureUnit?: string; // New
+  
+  // Total Contract Fields (Critical for Flat Rate)
+  totalPayable?: number;
+  totalPaid?: number;
+  
+  // Date-Driven Tracking (Lifecycle 2.0)
+  accumulatedInterest?: number;
+  currentPrincipal?: number; // Real-time outstanding principal
+  lastAccrualDate?: string;
+  dailyInterestRate?: number;
+  outstandingPenalty?: number;
+  
+  // Receipt Data
+  processingFee?: number;
+  netDisbursal?: number;
+  firstMonthInterest?: number;
+  paymentModes?: { type: string, amount: string, reference: string }[];
+
+  repaymentSchedule?: RepaymentScheduleItem[]; // Backend Schedule
+  nextPaymentDate?: string;
+  nextPaymentAmount?: number;
   
   // KYC Documents
   aadharNo: string; // New
@@ -43,14 +82,17 @@ export type LoanAccount = {
 };
 
 export type Transaction = {
-  id: string;
-  date: string;
+  id?: string;
+  txnId?: string; // Mongoose uses _id, logic uses txnId or id
+  date: string; // ISO String or Date object? Mock uses string, DB uses Date.
   amount: number;
   principalComponent?: number;
   interestComponent?: number;
   penalty?: number;
   refNo?: string;
   type: "EMI" | "Part Payment" | "Closure" | "Fee";
+  description?: string; // New
+  paymentMode?: string; // New
   balanceAfter: number;
 };
 

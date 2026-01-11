@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,36 +13,67 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { MOCK_LOANS } from "@/lib/mock-data";
 import {
     ArrowRight,
     IndianRupee,
     Search,
     Plus,
-    Calendar,
-    Percent,
     Briefcase,
     User,
     Car,
     AlertCircle,
     LayoutGrid,
-    Filter
+    Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { PERMISSIONS } from "@/lib/constants/permissions";
 import AccessDenied from "@/components/auth/access-denied";
+import { toast } from "sonner";
+import { mapLoanToFrontend } from "@/lib/mapper";
+import { LoanAccount } from "@/lib/mock-data";
 
 export default function LoansPage() {
-    const { user, checkPermission, isLoading } = useAuth();
+    const { user, checkPermission, isLoading: isAuthLoading } = useAuth();
     const [filter, setFilter] = useState("all");
     const [searchTerm, setSearchTerm] = useState("");
 
-    if (isLoading) return null; // Or a spinner
+    // State for Real Data
+    const [loans, setLoans] = useState<LoanAccount[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchLoans = async () => {
+            try {
+                const res = await fetch('/api/loans');
+                const data = await res.json();
+                if (data.success) {
+                    const mappedLoans = data.loans.map((l: any) => mapLoanToFrontend(l));
+                    setLoans(mappedLoans);
+                } else {
+                    toast.error("Failed to load loans");
+                }
+            } catch (error) {
+                console.error(error);
+                toast.error("Error loading loans");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        if (!isAuthLoading && checkPermission(PERMISSIONS.VIEW_LOANS)) {
+            fetchLoans();
+        }
+    }, [isAuthLoading, checkPermission]);
+
+    if (isAuthLoading) return null;
     if (!checkPermission(PERMISSIONS.VIEW_LOANS)) return <AccessDenied message="You do not have permission to view loans." />;
 
-    const filteredLoans = MOCK_LOANS.filter((loan) => {
-        const matchesStatus = filter === "all" ? true : loan.status.toLowerCase() === filter;
+    const filteredLoans = loans.filter((loan) => {
+        // Map backend status to lowercase for filtering
+        const status = loan.status?.toLowerCase() || 'active';
+        const matchesStatus = filter === "all" ? true : status === filter;
+
         const matchesSearch =
             loan.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             loan.loanNumber.toLowerCase().includes(searchTerm.toLowerCase());
@@ -50,16 +81,39 @@ export default function LoansPage() {
         return matchesStatus && matchesSearch;
     });
 
-    const getLoanIcon = (type: string) => {
-        switch (type) {
+    const getLoanIcon = (scheme: string) => {
+        switch (scheme) {
             case "Business": return Briefcase;
             case "Vehicle": return Car;
             default: return User;
         }
     }
 
+    // Progress: Paid / Total
+    const calculateProgress = (loan: LoanAccount) => {
+        if (!loan.repaymentSchedule || loan.repaymentSchedule.length === 0) return 0;
+        const paidInstallments = loan.repaymentSchedule.filter((i) => i.status === 'paid').length;
+        const total = loan.repaymentSchedule.length;
+        if (total === 0) return 0;
+        return (paidInstallments / total) * 100;
+    };
+
+    const getPaidEmis = (loan: LoanAccount) => {
+        if (!loan.repaymentSchedule) return 0;
+        return loan.repaymentSchedule.filter((i) => i.status === 'paid').length;
+    }
+
+    // Label Helper
+    const getPaymentLabel = (loan: LoanAccount) => {
+        const freq = loan.repaymentFrequency || "Monthly";
+        const type = loan.loanScheme === 'InterestOnly' ? 'Interest' : 'EMI';
+
+        // e.g. "Monthly EMI", "Weekly Interest", "Daily EMI"
+        return `${freq} ${type}`;
+    };
+
     return (
-        <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-5rem)] bg-muted/10 flex flex-col overflow-hidden">
+        <div className="-m-6 md:-m-8 w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[calc(100vh-1rem)] bg-muted/10 flex flex-col overflow-hidden">
 
             {/* === 1. STICKY HEADER === */}
             <div className="h-13 md:h-14 border-b border-border/50 flex items-center justify-between px-4 bg-white/95 backdrop-blur-xl shrink-0 dark:bg-zinc-950/95 sticky top-0 z-30">
@@ -69,7 +123,7 @@ export default function LoansPage() {
                     </div>
                     <div>
                         <h1 className="text-sm font-bold leading-none tracking-tight">Loan Portfolio</h1>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">Manage {MOCK_LOANS.length} active accounts</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">Manage {loans.length} active accounts</p>
                     </div>
                 </div>
 
@@ -127,30 +181,43 @@ export default function LoansPage() {
                     </Tabs>
                 </div>
 
-                {filteredLoans.length > 0 ? (
+                {isLoading ? (
+                    <div className="flex flex-col items-center justify-center py-20 h-[50vh]">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary/50" />
+                        <p className="text-xs text-muted-foreground mt-2">Loading portfolio...</p>
+                    </div>
+                ) : filteredLoans.length > 0 ? (
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {filteredLoans.map((loan) => {
-                            const Icon = getLoanIcon(loan.loanType);
-                            const progress = (loan.emisPaid / loan.tenureMonths) * 100;
+                            const Icon = getLoanIcon(loan.loanType || "Personal");
+                            const progress = calculateProgress(loan);
+                            const customerName = loan.customerName;
+                            // Capitalize status
+                            const status = loan.status ? loan.status.charAt(0).toUpperCase() + loan.status.slice(1) : 'Active';
+                            const paymentLabel = getPaymentLabel(loan);
 
                             return (
                                 <Card key={loan.loanNumber} className="group hover:shadow-md transition-all duration-300 border-border/50 overflow-hidden rounded-xl">
                                     <CardHeader className="p-4 pb-2 bg-muted/5 border-b border-border/50">
                                         <div className="flex justify-between items-start">
                                             <div className="flex gap-3 items-center">
-                                                <div className="h-8 w-8 rounded-lg bg-white border flex items-center justify-center text-primary shadow-sm shrink-0">
-                                                    <Icon className="h-4 w-4" />
+                                                <div className="h-8 w-8 rounded-lg bg-white border flex items-center justify-center text-primary shadow-sm shrink-0 overflow-hidden">
+                                                    {loan.photoUrl ? (
+                                                        <img src={loan.photoUrl} alt={customerName} className="h-full w-full object-cover" />
+                                                    ) : (
+                                                        <Icon className="h-4 w-4" />
+                                                    )}
                                                 </div>
                                                 <div className="overflow-hidden">
-                                                    <CardTitle className="text-sm font-bold truncate">{loan.customerName}</CardTitle>
+                                                    <CardTitle className="text-sm font-bold truncate" title={customerName}>{customerName}</CardTitle>
                                                     <p className="text-[10px] font-mono text-muted-foreground truncate">{loan.loanNumber}</p>
                                                 </div>
                                             </div>
                                             <Badge
-                                                variant={loan.status === 'Active' ? 'default' : loan.status === 'Closed' ? 'secondary' : 'destructive'}
+                                                variant={status === 'Active' ? 'default' : status === 'Closed' ? 'secondary' : 'destructive'}
                                                 className="uppercase text-[9px] h-5 px-1.5 tracking-wider font-bold"
                                             >
-                                                {loan.status}
+                                                {status}
                                             </Badge>
                                         </div>
                                     </CardHeader>
@@ -161,14 +228,14 @@ export default function LoansPage() {
                                                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Principal</p>
                                                 <p className="font-bold flex items-center gap-0.5 text-sm">
                                                     <IndianRupee className="h-3 w-3 text-muted-foreground" />
-                                                    {loan.totalLoanAmount.toLocaleString()}
+                                                    {loan.totalLoanAmount?.toLocaleString()}
                                                 </p>
                                             </div>
                                             <div className="space-y-0.5 text-right">
-                                                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Monthly EMI</p>
+                                                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{paymentLabel}</p>
                                                 <p className="font-bold flex items-center justify-end gap-0.5 text-sm text-emerald-600">
                                                     <IndianRupee className="h-3 w-3" />
-                                                    {loan.emiAmount.toLocaleString()}
+                                                    {loan.emiAmount?.toLocaleString()}
                                                 </p>
                                             </div>
                                         </div>
@@ -177,7 +244,7 @@ export default function LoansPage() {
                                         <div className="space-y-1 pt-1">
                                             <div className="flex justify-between text-[10px] font-medium">
                                                 <span className="text-muted-foreground">Progress</span>
-                                                <span>{loan.emisPaid}/{loan.tenureMonths} ({Math.round(progress)}%)</span>
+                                                <span>{getPaidEmis(loan)}/{loan.tenureMonths || loan.repaymentSchedule?.length || 0} ({Math.round(progress)}%)</span>
                                             </div>
                                             <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                                                 <div
@@ -210,10 +277,23 @@ export default function LoansPage() {
                         </div>
                         <h3 className="text-sm font-bold tracking-tight">No loans found</h3>
                         <p className="text-xs text-muted-foreground max-w-[200px] mt-1">
-                            Try adjusting your search criteria.
+                            {searchTerm || filter !== 'all' ? "Try adjusting your search filters." : "Get started by creating a new loan assignment."}
                         </p>
-                        <Button variant="outline" size="sm" className="mt-4 h-7 text-xs" onClick={() => { setFilter("all"); setSearchTerm(""); }}>
-                            Clear Filters
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-4 h-7 text-xs"
+                            onClick={() => {
+                                if (searchTerm || filter !== 'all') {
+                                    setFilter("all");
+                                    setSearchTerm("");
+                                } else {
+                                    // Redirect to new loan if list is empty and no filter
+                                    // But here we just clear filters
+                                }
+                            }}
+                        >
+                            {searchTerm || filter !== 'all' ? "Clear Filters" : "Refresh"}
                         </Button>
                     </div>
                 )}

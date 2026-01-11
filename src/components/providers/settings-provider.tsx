@@ -9,6 +9,7 @@ export interface CompanySettings {
 
     mobile: string;
     email: string;
+    website: string; // Added
     logoUrl: string; // For now just a placeholder URL or base64
     signatoryText: string;
     showSignatory: boolean;
@@ -38,6 +39,7 @@ const defaultCompany: CompanySettings = {
 
     mobile: "+91 98765 43210",
     email: "support@apnafinance.com",
+    website: "www.apnafinance.com",
     logoUrl: "https://placehold.co/400x200?text=Patni+Finance",
     signatoryText: "Authorized Signatory",
     showSignatory: true,

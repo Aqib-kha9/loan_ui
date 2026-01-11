@@ -42,11 +42,15 @@ export async function POST(req: Request) {
             loanAmount, interestRate, tenureMonths, loanScheme,
             interestType, interestRateUnit, interestPaidInAdvance,
             repaymentFrequency, processingFeePercent, startDate,
-            indefiniteTenure,
+            indefiniteTenure, tenureUnit,
+            
+            // Lifecycle 2.0 Configs
+            gracePeriodDays, penaltyConfig, advancePaymentAction, holidayHandling,
             
             // Splits
             paymentModes
         } = body;
+
 
         // 2. Validate essential fields
         if (!firstName || !lastName || !mobile || !loanAmount || !interestRate || !startDate) {
@@ -112,15 +116,30 @@ export async function POST(req: Request) {
         const periodicRate = annualRate / frequencyDivisor / 100;
 
         // Calculate ACTUAL Number of Installments (N_effective)
-        // The input 'N' is always in "Months"
-        let numberOfInstallments = N; // Default for Monthly
+        // The input 'N' is tenure duration
+        
+        // FIX: Ensure tenureUnit matches frequency if possible, or fallback safely
+        let tUnit = tenureUnit || 'Months';
+        
+        // Auto-correct unit if Frequency is Daily/Weekly but Unit defaulted to Months (User likely didn't specify or UI bug)
+        // If Logic: If Daily repayment, Tenure usually in Days. If Weekly, in Weeks.
+        if (repaymentFrequency === 'Daily' && tUnit === 'Months') tUnit = 'Days';
+        if (repaymentFrequency === 'Weekly' && tUnit === 'Months') tUnit = 'Weeks';
+
+        let numberOfInstallments = N; 
+        
         if (repaymentFrequency === 'Weekly') {
-             // Months -> Weeks
-             numberOfInstallments = (N / 12) * 52;
-        }
-        if (repaymentFrequency === 'Daily') {
-             // Months -> Days
-             numberOfInstallments = (N / 12) * 365;
+            if (tUnit === 'Months') numberOfInstallments = (N / 12) * 52;
+            else if (tUnit === 'Weeks') numberOfInstallments = N;
+            else if (tUnit === 'Days') numberOfInstallments = N / 7;
+        } else if (repaymentFrequency === 'Daily') {
+             if (tUnit === 'Months') numberOfInstallments = (N / 12) * 365;
+             else if (tUnit === 'Weeks') numberOfInstallments = N * 7;
+             else if (tUnit === 'Days') numberOfInstallments = N;
+        } else {
+            // Monthly
+             if (tUnit === 'Months') numberOfInstallments = N;
+             // ... other conversions if needed
         }
         numberOfInstallments = Math.ceil(numberOfInstallments);
 
@@ -142,7 +161,13 @@ export async function POST(req: Request) {
              }
         } else {
              if (interestType === "Flat") {
-                totalInterest = (P * annualRate * (N / 12)) / 100; // Flat interest based on Tenure Years (N/12)
+                // Total Interest = P * AnnualRate * (Tenure in Years) / 100
+                // We need Tenure in Years.
+                let tenureInYears = N / 12; // Default if Months
+                if (tUnit === 'Weeks') tenureInYears = N / 52;
+                if (tUnit === 'Days') tenureInYears = N / 365;
+
+                totalInterest = (P * annualRate * tenureInYears) / 100; 
                 totalPayable = P + totalInterest;
                 emi = totalPayable / numberOfInstallments;
              } else {
@@ -163,24 +188,39 @@ export async function POST(req: Request) {
             netDisbursal -= firstMonthInterest;
         }
 
-        // 6. Generate Repayment Schedule
+        // 6. Generate Repayment Schedule & Calculate First Installment Date
+        const { generateRepaymentSchedule } = await import('@/lib/loan-calculations');
+        const { addMonths, addWeeks, addDays } = await import('date-fns');
+
+        const disbursementDate = new Date(startDate);
+        let firstInstallmentDate = new Date(disbursementDate);
+
+        // If NOT interest paid in advance, First EMI is after 1 period
+        if (!interestPaidInAdvance) {
+            if (repaymentFrequency === 'Weekly') firstInstallmentDate = addWeeks(firstInstallmentDate, 1);
+            else if (repaymentFrequency === 'Daily') firstInstallmentDate = addDays(firstInstallmentDate, 1);
+            else firstInstallmentDate = addMonths(firstInstallmentDate, 1); // Default Monthly
+        }
+
         var schedule: any[] = [];
         let nextPaymentDate = null;
         let nextPaymentAmount = 0;
 
         if (!indefiniteTenure) {
-            const { generateRepaymentSchedule } = await import('@/lib/loan-calculations');
             schedule = generateRepaymentSchedule({
                 loanAmount: P,
                 interestRate: R, // Yearly
                 tenureMonths: N,
+                tenureUnit: tUnit as any,
                 loanScheme: loanScheme as any,
                 interestType: interestType as any,
                 interestRateUnit: 'Yearly',
                 repaymentFrequency: repaymentFrequency as any,
-                startDate: new Date(startDate),
+                startDate: firstInstallmentDate, // Pass CALCULATED First EMI Date
+                disbursementDate: new Date(), // Assuming disbursement happens NOW
                 indefiniteTenure: false
             });
+
 
             if (schedule.length > 0) {
                 nextPaymentDate = schedule[0].dueDate;
@@ -188,7 +228,13 @@ export async function POST(req: Request) {
             }
         } else {
             // Indefinite Tenure: Next payment is just next month's interest
-            nextPaymentDate = new Date(startDate);
+             if (!interestPaidInAdvance) {
+                // If standard, first interest due after 1 month
+                nextPaymentDate = addMonths(disbursementDate, 1);
+             } else {
+                nextPaymentDate = new Date(disbursementDate);
+             }
+            
             // Calculate 1 month interest
             const r_monthly = (R / 12) / 100;
             nextPaymentAmount = Math.round(P * r_monthly);
@@ -204,6 +250,7 @@ export async function POST(req: Request) {
             interestRate: R,
             interestRateUnit: 'Yearly',
             tenureMonths: N,
+            tenureUnit: tUnit,
             indefiniteTenure: !!indefiniteTenure,
             loanScheme,
             interestType,
@@ -211,13 +258,19 @@ export async function POST(req: Request) {
             repaymentFrequency,
             processingFeePercent: PF_Percent,
             
+            // Lifecycle 2.0
+            gracePeriodDays: parseInt(gracePeriodDays) || 0,
+            penaltyConfig: penaltyConfig || { type: 'Fixed', value: 0 },
+            advancePaymentAction: advancePaymentAction || 'ReduceNextEMI',
+            holidayHandling: holidayHandling || 'Ignore',
+            
             calculatedEMI: Math.round(emi),
             totalInterest: Math.round(totalInterest),
             totalPayable: Math.round(totalPayable),
             netDisbursal: Math.round(netDisbursal),
             
-            disbursementDate: new Date(),
-            startDate: new Date(startDate),
+            disbursementDate: disbursementDate, // User Selected
+            startDate: firstInstallmentDate,    // Calculated First EMI
             
             // Future Tracking
             nextPaymentDate,
@@ -252,5 +305,26 @@ export async function POST(req: Request) {
     } catch (error: any) {
         console.error("Loan Creation Error:", error);
         return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    }
+}
+
+export async function GET(req: Request) {
+    try {
+        await dbConnect();
+        
+        // Auth Check
+        const hasAccess = await checkAccess(req, PERMISSIONS.VIEW_LOANS);
+        if (!hasAccess) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+        }
+
+        const loans = await Loan.find({})
+            .populate('client', 'firstName lastName photoUrl mobile')
+            .sort({ createdAt: -1 });
+
+        return NextResponse.json({ success: true, loans });
+    } catch (error: any) {
+        console.error("Fetch Loans Error:", error);
+        return NextResponse.json({ error: "Failed to fetch loans" }, { status: 500 });
     }
 }

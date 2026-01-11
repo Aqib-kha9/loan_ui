@@ -1,11 +1,11 @@
-import { LoanAccount, Transaction } from "./mock-data";
-import { addMonths, isSameMonth, parseISO, format, differenceInMonths, startOfMonth } from "date-fns";
+import { LoanAccount, Transaction, RepaymentScheduleItem } from "./mock-data";
+import { parseISO, format } from "date-fns";
 
 export interface LedgerEntry {
     date: string;
     particulars: string;
     type: "Disbursal" | "Interest" | "EMI" | "Penalty" | "Closing";
-    debit: number;  // Out (Charges, Disbursal)
+    debit: number;  // Out (Charges, Disbursal, Interest Due)
     credit: number; // In (Payments)
     balance: number;
     refNo?: string;
@@ -13,191 +13,198 @@ export interface LedgerEntry {
     interestComponent?: number;
 }
 
-export function calculateLedger(loan: LoanAccount): LedgerEntry[] {
-    const entries: LedgerEntry[] = [];
-    
-    // 1. Initial Disbursal
-    let currentBalance = loan.totalLoanAmount;
-    const disbursalDate = parseISO(loan.disbursedDate);
-    
-    entries.push({
-        date: loan.disbursedDate,
-        particulars: "Loan Amount Disbursed",
-        type: "Disbursal",
-        debit: currentBalance,
-        credit: 0,
-        balance: currentBalance,
-        refNo: "-"
-    });
-
-    // 2. Iterate month by month until today (or loan closure)
-    let currentDate = addMonths(disbursalDate, 1); // First interest cycle starts 1 month after disbursal
-    const today = new Date();
-    
-    // Limit loop to a reasonable future date or today
-    while (currentDate <= addMonths(today, 1)) { 
-        // A. Calculate Monthly Interest on Opening Balance
-        // Logic: Rate is Monthly (e.g., 2% per month)
-        // If Rate is Yearly in data (e.g. 24%), convert to monthly
-        // We typically assume input is standardized. Let's assume input 'interestRate' is Yearly for now unless specified.
-        // User said 10% in Excel image, looked like monthly. 
-        // Let's treat loan.interestRate as Annual by default usually, but user specific case might be monthly.
-        // However, standard banking is Annual / 12. 
-        // If user said "Yearly" in form, we divide by 12.
-        
-        // FOR NOW: Standard logic: Rate / 12 / 100 * Balance
-        const monthlyRate = (loan.interestRate / 12) / 100;
-        const interestAmount = currentBalance * monthlyRate;
-
-        // B. Check for payments in this month
-        const monthlyTransactions = loan.transactions.filter(t => 
-            isSameMonth(parseISO(t.date), currentDate) && t.type !== 'Fee' // Fees typically separate
-        );
-
-        let totalPaymentThisMonth = 0;
-        monthlyTransactions.forEach(txn => {
-            totalPaymentThisMonth += txn.amount;
-        });
-
-        const payment = totalPaymentThisMonth;
-        
-        // C. Apply Excel Logic: 
-        // New Balance = Old Balance + Interest - Payment
-        // If Payment == 0, then New Balance = Old Balance + Interest (Capitalization)
-        
-        // Record Interest Entry (Debit)
-        // In user's excel, "Interest Received" column implies logic.
-        // But for a statement, we debit Interest.
-        
-        currentBalance = currentBalance + interestAmount;
-        
-        entries.push({
-            date: format(currentDate, "yyyy-MM-dd"), // e.g., 2024-02-15
-            particulars: `Interest Capitalized (@${(loan.interestRate/12).toFixed(2)}%)`,
-            type: "Interest",
-            debit: interestAmount,
-            credit: 0,
-            balance: currentBalance,
-            refNo: "-"
-        });
-
-        // Record Payment Entry (Credit)
-        if (payment > 0) {
-           currentBalance = currentBalance - payment;
-           
-           // We can assume the first txn ref for simplicity if multiple, or list them separately.
-           // For better detail, let's push individual payment entries
-           monthlyTransactions.forEach(txn => {
-               entries.push({
-                   date: txn.date,
-                   particulars: `Payment Received (${txn.type})`,
-                   type: "EMI",
-                   debit: 0,
-                   credit: txn.amount,
-                   balance: currentBalance, // Technically balance drops after each, but simplified here
-                   refNo: txn.refNo || txn.id,
-                   principalComponent: txn.amount - interestAmount, // Rough approx
-                   interestComponent: interestAmount
-               });
-           });
-           
-           // Correcting balance for exact flow:
-           // If we pushed multiple payments, we should have reduced balance step-by-step.
-           // Since we did bulk deduction above, let's stick to bulk or refine. 
-           // Let's Refine loop for transaction accuracy.
-        } else {
-             // No Payment - Balance remains assumed 'Capitalized'
-        }
-
-        currentDate = addMonths(currentDate, 1);
-        
-        // Safety break
-        if (currentBalance <= 0) break;
-    }
-
-    return entries;
-}
-
-// Refined Version to handle multiple transactions properly
 export function generateLedger(loan: LoanAccount): LedgerEntry[] {
-    const entries: LedgerEntry[] = [];
-    let balance = loan.totalLoanAmount;
+    let entries: LedgerEntry[] = [];
     
-    // 1. Disbursal
+    // 1. Collect Disbursal
+    const loanAmount = loan.totalLoanAmount;
+    const disbursalDate = loan.disbursedDate ? loan.disbursedDate : new Date().toISOString().split("T")[0];
+
     entries.push({
-        date: loan.disbursedDate,
+        date: disbursalDate,
         particulars: "Loan Amount Disbursed",
         type: "Disbursal",
-        debit: loan.totalLoanAmount,
+        debit: loanAmount,
         credit: 0,
-        balance: balance,
+        balance: 0, // Placeholder
         refNo: "-"
     });
 
-    const startDate = parseISO(loan.disbursedDate);
-    const today = new Date();
-    let iteratorDate = addMonths(startDate, 1);
+    // 2. Collect Interest Accruals (From Schedule)
+    // If Indefinite Tenure, 'totalInterest' is 0, so 'Flat' logic skips. 
+    // We must treat Indefinite as Periodic Accrual even if labeled Flat.
+    const isIndefinite = loan.indefiniteTenure || (loan.tenureMonths === 0 && loan.loanScheme === 'InterestOnly');
 
-    // Sort transactions by date
-    const allTransactions = [...loan.transactions].sort((a,b) => a.date.localeCompare(b.date));
-
-    // Limit the loop:
-    // 1. Until balance is zero (Loan Closed)
-    // OR
-    // 2. Until current date (Don't project future interest in a statement)
-    while (iteratorDate <= today && balance > 0) {
-         // Interest Date (e.g. 15th of month)
-         const interestDateStr = format(iteratorDate, "yyyy-MM-dd");
-         
-         // 2. Charge Interest
-         // Standard: Annual Rate / 12
-         // Todo: If user wants specific monthly int input, we need that flag. Assuming Annual for now.
-         const monthlyRate = (loan.interestRate / 12) / 100;
-         const interestAmount = Math.round(balance * monthlyRate); // Rounding for clean numbers
-         
-         balance += interestAmount;
-
-         entries.push({
-             date: interestDateStr,
-             particulars: `Interest Applied`,
-             type: "Interest",
-             debit: interestAmount,
-             credit: 0,
-             balance: balance,
-             interestComponent: interestAmount
-         });
-
-         // 3. Find payments in this cycle (e.g. same month matches)
-         // Matches if Month and Year are same as iteratorDate
-         const cycleTxns = allTransactions.filter(t => isSameMonth(parseISO(t.date), iteratorDate));
-         
-         for (const txn of cycleTxns) {
-             balance -= txn.amount;
+    if (loan.repaymentSchedule && loan.repaymentSchedule.length > 0) {
+        
+        // SPECIAL HANDLING FOR FLAT RATE (Fixed Tenure):
+        if (loan.interestType === 'Flat' && !isIndefinite) {
+             const totalInterest = loan.repaymentSchedule.reduce((sum, item) => sum + (item.interestComponent || 0), 0);
              
-             // Principal Comp = Paid - Interest (simplified)
-             // Actually, since interest is already added to balance, the entire payment reduces balance.
-             // But for reporting "how much was principal", it is Payment - Interest accrued.
-             const princComp = txn.amount - interestAmount;
-             
-             entries.push({
-                 date: txn.date,
-                 particulars: `Payment Received (${txn.type})`,
-                 type: "EMI",
-                 debit: 0,
-                 credit: txn.amount,
-                 balance: balance,
-                 refNo: txn.refNo || txn.id,
-                 interestComponent: interestAmount, // Showing what it covered
-                 principalComponent: princComp
-             });
-         }
+             if (totalInterest > 0) {
+                 entries.push({
+                     date: disbursalDate,
+                     particulars: "Total Interest (Deferred)",
+                     type: "Interest",
+                     debit: totalInterest,
+                     credit: 0,
+                     balance: 0, 
+                     refNo: "-",
+                     interestComponent: totalInterest
+                 });
+             }
+        } else {
+            // REDUCING BALANCE or INDEFINITE: Show Accruals as they happen
+            loan.repaymentSchedule.forEach((item) => {
+                const isDue = new Date(item.dueDate) <= new Date();
+                const isPaid = item.paidAmount > 0 || item.status === 'paid';
 
-         iteratorDate = addMonths(iteratorDate, 1);
-         
-         // Break if too far in future
-         if (differenceInMonths(iteratorDate, today) > 6 && balance <= 0) break;
-         if (differenceInMonths(iteratorDate, today) > 60) break; // Hard limit 5 years
+                if ((isDue || isPaid) && item.interestComponent > 0) {
+                    const entryDate = (isPaid && item.paidDate && new Date(item.paidDate) < new Date(item.dueDate)) 
+                        ? item.paidDate 
+                        : item.dueDate;
+
+                    entries.push({
+                        date: entryDate, 
+                        particulars: `Interest Applied (Inst #${item.installmentNo})`,
+                        type: "Interest",
+                        debit: item.interestComponent,
+                        credit: 0,
+                        balance: 0, 
+                        refNo: "-",
+                        interestComponent: item.interestComponent
+                    });
+                }
+            });
+        }
+    } else if (isIndefinite) {
+        // No Schedule (Indefinite Tenure?) -> We must synth accruals?
+        // Actually, Indefinite Loans usually don't have a schedule generated?
+        // If NO schedule, we can't show accruals easily here without running the Engine.
+        // Assuming Backend might generate 'mock' schedule for indefinite?
+        // If not, we skip accruals for now, OR we rely on transactions.
     }
+
+    // 2.5. Handle "Interest Paid In Advance" (Phantom Transaction)
+    // If user paid interest upfront, Backend reduced Net Disbursal but didn't log a Transaction.
+    // We must log the "Payment" of that interest to balance the books if we are debiting interest.
+    // BUT: For Indefinite/InterestOnly, we likely didn't debit the interest yet above if schedule is empty.
+    // If Schedule is Empty, we have NO debit. So we shouldn't Credit.
+    // BUT user says "Calculations wrong".
+    // If Flat/InterestOnly/Indefinite:
+    // User expects to see: Principal 50k.
+    // If Interest Paid Advance: He paid 417.
+    // Maybe we should show:
+    // 1. Disbursal 50k.
+    // 2. Payment (Advance Int) 417.
+    // 3. Balance 49583? (Net Disbursal).
+    // The user's goal is usually to track "How much I gave".
+    // If I gave 49583, I want to see balance 50k? No, that means I owe 50k.
+    // So the Ledger Balance should be 50k.
+    // If I show "Disbursal 50k", Balance is 50k.
+    // If I show "Payment 417", Balance becomes 49583.
+    // This implies I DEBTED 417 somewhere.
+    // If I didn't debit 417, showing payment reduces principal, which is WRONG for Interest Payment.
+    // So if I show "Payment 417", I MUST show "Interest Debit 417".
+    // Since Indefinite Schedule is missing, I must synthesizing the DEBIT and CREDIT.
+    
+    if (loan.interestPaidInAdvance && loan.emiAmount > 0) {
+        // Add "Interest Applied (Advance)"
+        entries.push({
+            date: disbursalDate,
+            particulars: "Interest Charge (Advance)",
+            type: "Interest",
+            debit: loan.emiAmount,
+            credit: 0,
+            balance: 0,
+            refNo: "-",
+            interestComponent: loan.emiAmount
+        });
+
+        // Add "Interest Paid (Advance)"
+        entries.push({
+            date: disbursalDate,
+            particulars: "Interest Paid (Advance)",
+            type: "EMI", // or "Fee"
+            debit: 0,
+            credit: loan.emiAmount,
+            balance: 0,
+            refNo: "ADVANCE",
+            interestComponent: loan.emiAmount
+        });
+    }
+
+
+    // 3. Collect Transactions (From Real Log)
+    if (loan.transactions && loan.transactions.length > 0) {
+        loan.transactions.forEach((txn) => {
+            entries.push({
+                date: (txn.date as any) instanceof Date ? (txn.date as any).toISOString() : txn.date,
+                particulars: txn.description || `Payment Received (${txn.type})`,
+                type: "EMI",
+                debit: 0,
+                credit: txn.amount,
+                balance: 0, // Placeholder
+                refNo: txn.refNo || (txn.txnId ? txn.txnId.split('-')[1] : '-'),
+                interestComponent: txn.interestComponent // Pass it through
+            });
+        });
+    }
+
+    // 4. Sort Chronologically
+    // Priority: Disbursal -> Interest -> Penalty -> EMI -> Closing
+    const typePriority: Record<string, number> = { "Disbursal": 0, "Interest": 1, "Penalty": 2, "EMI": 3, "Closing": 4, "Fee": 5, "Part Payment": 3 };
+    
+    entries.sort((a, b) => {
+        // Normalize to YYYY-MM-DD to ignore time components precisely
+        const dateStrA = new Date(a.date).toISOString().split('T')[0];
+        const dateStrB = new Date(b.date).toISOString().split('T')[0];
+        
+        if (dateStrA < dateStrB) return -1;
+        if (dateStrA > dateStrB) return 1;
+        
+        // Dates are exactly equal (Same Day)
+        // Use strict Priority
+        const priA = typePriority[a.type] ?? 99;
+        const priB = typePriority[b.type] ?? 99;
+        
+        return priA - priB;
+    });
+
+    // 5. Calculate Running Balance
+    // We calculate purely chronological now (Disbursal First -> Interest -> Payment)
+    let runningBalance = 0;
+    entries = entries.map(entry => {
+        runningBalance = runningBalance + entry.debit - entry.credit;
+        return {
+            ...entry,
+            balance: Number(runningBalance.toFixed(2)) 
+        };
+    });
+
+    // 6. Return Sorted Descending for UI (Latest First)?
+    // User complaint "1333" balance.
+    // If we return Descending (Newest First):
+    // List: Pay(3) -> Int(2) -> Disb(1).
+    // Balances embedded: Pay(51k) -> Int(56k) -> Disb(50k).
+    // Visual: 
+    // Row 1 (Pay): Bal 51k.
+    // Row 2 (Int): Bal 56k.
+    // Row 3 (Disb): Bal 50k.
+    
+    // BUT the user wants to see "Ledger Style" usually Ascending?
+    // "Date Particulars Credit Debit Balance"
+    // Usually strict date order Top to Bottom.
+    // 11/01 Disb 50k Bal 50k
+    // 11/01 Int 6k Bal 56k
+    // 11/01 Pay 4k Bal 51k
+    
+    // The user's screenshot had Disbursal at Summary Bottom (visually last row).
+    // Top Row: Interest.
+    // Logic suggests Descending Sort (Latest at Top?).
+    // A standard bank statement is usually Ascending (Old at Top).
+    // Let's stick to Ascending (Chronological).
     
     return entries;
 }
+

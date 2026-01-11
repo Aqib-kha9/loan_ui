@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  CheckCircle2,
   Smartphone,
   Calendar,
   Wallet,
@@ -35,7 +36,8 @@ import {
   Banknote,
   Plus,
   X,
-  Trash2
+  Trash2,
+  Loader2
 } from "lucide-react";
 import {
   Select,
@@ -44,7 +46,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getLoanDetails, LoanAccount, MOCK_LOANS } from "@/lib/mock-data";
+import { LoanAccount } from "@/lib/mock-data";
+import { mapLoanToFrontend } from "@/lib/mapper";
 import { generateLedger } from "@/lib/ledger-utils";
 import {
   Dialog,
@@ -57,17 +60,23 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { PERMISSIONS } from "@/lib/constants/permissions";
 import AccessDenied from "@/components/auth/access-denied";
 
-export default function QuickPaymentPage() {
-  const { user, checkPermission, isLoading } = useAuth(); // Added isLoading
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+
+function QuickPaymentContent() {
+  // Re-trigger build
+  const { user, checkPermission, isLoading: isAuthLoading } = useAuth();
+  const searchParams = useSearchParams();
+  const initialLoanId = searchParams.get("loan");
 
   // Permission Guard
-  if (isLoading) return null;
   const canViewDashboard = checkPermission(PERMISSIONS.VIEW_DASHBOARD);
   const canCollect = checkPermission(PERMISSIONS.CREATE_PAYMENT);
 
-  if (!canViewDashboard && !canCollect) {
-    return <AccessDenied message="You do not have permission to access the dashboard." />;
-  }
+
+  // State
+  const [loans, setLoans] = useState<LoanAccount[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -79,8 +88,9 @@ export default function QuickPaymentPage() {
   // Dynamic Payment State
   const [isSplitMode, setIsSplitMode] = useState(false);
   const [payments, setPayments] = useState([{ mode: "cash", amount: "" }]);
-  const [narrative, setNarrative] = useState(""); // New: Custom Particulars
-  const [contributionDate, setContributionDate] = useState(new Date().toISOString().split("T")[0]); // New: Backdated Payment Logic Check
+  const [narrative, setNarrative] = useState("");
+  const [contributionDate, setContributionDate] = useState(new Date().toISOString().split("T")[0]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Sidebar Logic
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
@@ -92,23 +102,71 @@ export default function QuickPaymentPage() {
   const TemplateComponent = selectedTemplate.receiptComponent;
 
   // Print Logic
+  const [lastPaymentData, setLastPaymentData] = useState<any[]>([]); // Store for receipt
   const componentRef = useRef<HTMLDivElement>(null);
   const handlePrint = useReactToPrint({
     contentRef: componentRef,
     documentTitle: `Receipt_${selectedId || 'New'}`,
   });
 
-  // Filter List
-  const filteredLoans = MOCK_LOANS.filter(l =>
-    l.customerName.toLowerCase().includes(query.toLowerCase()) ||
-    l.loanNumber.toLowerCase().includes(query.toLowerCase())
-  );
+  // Fetch Loans
+  useEffect(() => {
+    const fetchLoans = async () => {
+      try {
+        const res = await fetch('/api/loans');
+        const data = await res.json();
+        if (data.success) {
+          const mappedLoans = data.loans.map((l: any) => mapLoanToFrontend(l));
+          setLoans(mappedLoans);
+        }
+      } catch (error) {
+        console.error("Failed to fetch loans:", error);
+        // toast.error("Failed to fetch loans"); 
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    if (user) {
+      fetchLoans();
+    }
+  }, [user]);
 
-  const selectedLoan = filteredLoans.find(l => l.loanNumber === selectedId) || null;
+  // Handle Query Param Selection
+  useEffect(() => {
+    if (initialLoanId && loans.length > 0 && !selectedId) {
+      const targetLoan = loans.find(l => l.loanNumber === initialLoanId);
+      if (targetLoan) {
+        handleSelectCustomer(targetLoan);
+      }
+    }
+  }, [initialLoanId, loans, selectedId]);
+
+  if (isAuthLoading) return null;
+
+  if (!canViewDashboard && !canCollect) {
+    return <AccessDenied message="You do not have permission to access the dashboard." />;
+  }
+
+  // Filter List
+  const filteredLoans = loans.filter(l =>
+    (l.customerName.toLowerCase().includes(query.toLowerCase()) ||
+      l.loanNumber.toLowerCase().includes(query.toLowerCase())) &&
+    l.status !== 'Closed' // Filter out fully paid/closed loans
+  ).sort((a, b) => {
+    // Sort by due date (earliest first)
+    const dateA = a.nextPaymentDate ? new Date(a.nextPaymentDate).getTime() : Number.MAX_SAFE_INTEGER;
+    const dateB = b.nextPaymentDate ? new Date(b.nextPaymentDate).getTime() : Number.MAX_SAFE_INTEGER;
+    return dateA - dateB;
+  });
+
+  const selectedLoan = loans.find(l => l.loanNumber === selectedId) || null;
 
   const handleSelectCustomer = (loan: LoanAccount) => {
     setSelectedId(loan.loanNumber);
-    setPayments([{ mode: "cash", amount: loan.emiAmount.toString() }]);
+    // Use nextPaymentAmount if available and > 0, else emiAmount. Default to emiAmount if 0 (e.g. fully paid but want to pay more?)
+    // Actually if 0, default to empty? No, keep emiAmount as standard reference or 0.
+    const defaultAmount = (loan.nextPaymentAmount && loan.nextPaymentAmount > 0) ? loan.nextPaymentAmount : loan.emiAmount;
+    setPayments([{ mode: "cash", amount: defaultAmount.toString() }]);
     setNarrative(""); // Reset
     setActiveTab("ledger"); // Reset tab on switch
     setLedgerHistory(generateLedger(loan));
@@ -136,7 +194,9 @@ export default function QuickPaymentPage() {
     setPayments(newPayments);
   };
 
-  const handlePayment = () => {
+  // NOTE: This currently only updates local state. 
+  // To persist payments, we would need to POST to an API.
+  const handlePayment = async () => {
     if (!selectedLoan) return;
 
     // Validate all amounts
@@ -152,52 +212,68 @@ export default function QuickPaymentPage() {
       return;
     }
 
-    // Add entries to ledger
-    let runningBalance = ledgerHistory.length > 0 ? ledgerHistory[ledgerHistory.length - 1].balance : 0;
-    const newEntries = validPayments.map((p, index) => {
-      const amount = parseFloat(p.amount);
-      runningBalance -= amount;
+    try {
+      setIsSubmitting(true);
+      const toastId = toast.loading("Processing Payment...");
 
-      // Use Custom Narrative if provided, else default
-      let entryParticulars = narrative ? narrative : `Payment Received (${p.mode})`;
+      const response = await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          loanNumber: selectedId, // matches loanId in backend
+          payments: validPayments,
+          date: contributionDate,
+          narrative: narrative
+        })
+      });
 
-      if (isSplitMode && payments.length > 1 && !narrative) {
-        entryParticulars = `Payment Received (Split ${index + 1} - ${p.mode})`;
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.error || "Payment failed", { id: toastId });
+        return;
       }
 
-      return {
-        date: new Date(contributionDate).toISOString(),
-        particulars: entryParticulars,
-        type: 'Repayment',
-        credit: amount,
-        debit: 0,
-        balance: runningBalance,
-        refNo: `TXN-${Math.floor(Math.random() * 10000)}`
-      };
-    });
+      // Success
+      const totalCollected = validPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+      toast.success(`Collected ₹${totalCollected.toLocaleString()}`, { id: toastId });
 
-    setLedgerHistory([...ledgerHistory, ...newEntries]);
+      // Refresh Data (Re-fetch loans to update ledger/balance)
+      // We can optimize this by just updating the local state, but re-fetch ensures sync
+      // For now, let's just trigger a re-fetch if we had a function for it, or we rely on useEffect deps?
+      // We defined fetchLoans inside useEffect, let's extract it or force reload.
+      // Easiest is to window.location.reload() or router.refresh(), but that's jarring.
+      // Better: user useEffect dependency or manual Trigger.
 
-    const totalCollected = validPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+      // Log Activity Client Side (Optional, backend does it)
+      logActivity({
+        type: 'Payment',
+        title: 'Payment Received',
+        entityName: selectedLoan.customerName,
+        amount: totalCollected,
+        action: 'Received',
+        description: `Received ₹${totalCollected.toLocaleString()} via API.`,
+        user: user?.name || 'User'
+      });
 
-    // Log Activity
-    logActivity({
-      type: 'Payment',
-      title: 'Payment Received',
-      entityName: selectedLoan.customerName,
-      amount: totalCollected,
-      action: 'Received',
-      description: `Received ₹${totalCollected.toLocaleString()} from ${selectedLoan.customerName} via ${validPayments.map(p => p.mode).join(', ')}.`,
-      user: 'Admin User'
-    });
+      // Capture Payment Data for Receipt (before clearing form)
+      setLastPaymentData([...validPayments]); // Store copy
 
-    toast.success(`Collected ₹${totalCollected.toLocaleString()} via ${validPayments.length} mode${validPayments.length > 1 ? 's' : ''}`);
+      // Reset Form
+      setPayments([{ mode: "cash", amount: "" }]);
+      setNarrative("");
+      setIsSplitMode(false);
+      setShowReceipt(true);
 
-    // Reset
-    setPayments([{ mode: "cash", amount: "" }]);
-    setNarrative("");
-    setIsSplitMode(false);
-    setShowReceipt(true);
+      // Do NOT reload here. Let user see receipt.
+      // Refresh happens when user CLOSES the receipt dialog.
+
+    } catch (error) {
+      console.error("Payment API Error:", error);
+      toast.error("Network error processing payment");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -254,7 +330,14 @@ export default function QuickPaymentPage() {
           {/* Scrollable List */}
           <div className="flex-1 overflow-y-auto scrollbar-thin">
             <div className="divide-y divide-border/30">
-              {filteredLoans.length === 0 && !isCollapsed && (
+              {isLoading && (
+                <div className="flex flex-col items-center justify-center p-8 text-muted-foreground gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span className="text-xs">Loading loans...</span>
+                </div>
+              )}
+
+              {!isLoading && filteredLoans.length === 0 && !isCollapsed && (
                 <div className="p-8 text-center text-muted-foreground">
                   <p className="text-xs">No customers found</p>
                 </div>
@@ -282,6 +365,9 @@ export default function QuickPaymentPage() {
                     "transition-all duration-300 shrink-0 border-none items-center justify-center",
                     isCollapsed ? "h-10 w-10 ring-2 ring-primary/20 shadow-md" : "h-9 w-9 bg-primary shadow-sm"
                   )}>
+                    {loan.photoUrl ? (
+                      <AvatarImage src={loan.photoUrl} alt={loan.customerName} className="object-cover" />
+                    ) : null}
                     <AvatarFallback className="flex h-full w-full items-center justify-center text-[10px] font-bold text-primary-foreground bg-primary">
                       {loan.customerName.substring(0, 2).toUpperCase()}
                     </AvatarFallback>
@@ -296,9 +382,41 @@ export default function QuickPaymentPage() {
                         </span>
                       </div>
                       <p className="text-[11px] text-muted-foreground truncate font-mono tracking-tight opacity-70 mb-1">{loan.loanNumber}</p>
-                      <div className="flex justify-between items-end">
-                        <p className="text-[10px] text-muted-foreground">EMI: ₹{loan.emiAmount}</p>
-                        <p className="text-xs font-bold text-destructive">₹{loan.emiAmount.toLocaleString()}</p>
+                      <div className="flex justify-between items-end mt-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-muted-foreground font-medium bg-muted/50 px-1.5 py-0.5 rounded-sm border border-border/50">
+                            EMI: ₹{loan.emiAmount?.toLocaleString() ?? 0}
+                          </span>
+                        </div>
+
+                        {/* Status Logic: If Next Date is Future, show PAID. Else show DUE */}
+                        {(() => {
+                          const isFuture = loan.nextPaymentDate && new Date(loan.nextPaymentDate) > new Date();
+                          const isDue = !isFuture;
+
+                          if (isFuture) {
+                            return (
+                              <div className="flex flex-col items-end">
+                                <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                                  <CheckCircle2 className="h-3 w-3" /> PAID
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex flex-col items-end">
+                              <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest mb-[1px]">Due</span>
+                              <p className={cn(
+                                "text-xs font-bold font-mono",
+                                (loan.nextPaymentAmount || 0) > loan.emiAmount ? "text-red-600 dark:text-red-400" :
+                                  (loan.nextPaymentAmount || 0) > 0 ? "text-blue-600 dark:text-blue-400" : "text-emerald-600"
+                              )}>
+                                ₹{(loan.nextPaymentAmount || 0).toLocaleString()}
+                              </p>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -329,13 +447,32 @@ export default function QuickPaymentPage() {
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
 
-                <div className="h-9 w-9 rounded-lg bg-primary/10 border border-primary/10 flex items-center justify-center text-primary shadow-sm hidden md:flex">
-                  <Briefcase className="h-4 w-4" />
+                <div className="h-9 w-9 hidden md:block">
+                  <Avatar className="h-full w-full rounded-lg ring-1 ring-border/50">
+                    {selectedLoan.photoUrl ? (
+                      <AvatarImage src={selectedLoan.photoUrl} alt={selectedLoan.customerName} className="object-cover" />
+                    ) : null}
+                    <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-xs font-bold">
+                      {selectedLoan.customerName.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
                 </div>
                 <div>
                   <h1 className="text-base font-bold leading-none tracking-tight">{selectedLoan.customerName}</h1>
                   <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1.5">
-                    {selectedLoan.mobile} • Last paid 15d ago
+                    {selectedLoan.mobile || "No Mobile"} •
+                    {(() => {
+                      const txns = selectedLoan.transactions || [];
+                      // Find latest payment (excluding this session's if needed, but simplest is latest)
+                      if (txns.length === 0) return "No payments yet";
+                      const latest = txns.reduce((a, b) => new Date(a.date) > new Date(b.date) ? a : b);
+                      const diffTime = Math.abs(new Date().getTime() - new Date(latest.date).getTime());
+                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                      if (diffDays === 0) return "Paid today";
+                      if (diffDays === 1) return "Paid yesterday";
+                      return `Last paid ${diffDays}d ago`;
+                    })()}
                   </p>
                 </div>
               </div>
@@ -434,29 +571,118 @@ export default function QuickPaymentPage() {
                       <Banknote className="h-3 w-3 text-primary" /> Financials
                     </h3>
                     <div className="bg-white p-5 rounded-xl border shadow-sm ring-1 ring-black/5 dark:bg-zinc-900/50 space-y-3">
-                      <div className="flex justify-between items-center py-1">
-                        <span className="text-sm text-muted-foreground font-medium">Principal</span>
-                        <span className="font-bold text-base text-foreground">₹{selectedLoan.totalLoanAmount.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-1">
-                        <span className="text-sm font-medium text-red-600/80">Interest ({selectedLoan.interestRate}%)</span>
-                        <span className="font-bold text-red-600 text-sm">+ ₹{((selectedLoan.totalLoanAmount * (selectedLoan.interestRate / 100) * (selectedLoan.tenureMonths / 12))).toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 text-muted-foreground">
-                        <span className="text-sm font-medium">Processing Fee (1%)</span>
-                        <span className="font-bold text-sm">- ₹{(selectedLoan.totalLoanAmount * 0.01).toLocaleString()}</span>
-                      </div>
-                      <Separator />
-                      <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-100 dark:bg-emerald-900/10 dark:border-emerald-900/30">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wide">Net Disbursal</span>
-                          <span className="font-bold text-lg text-emerald-700 tracking-tight">₹{(selectedLoan.totalLoanAmount - (selectedLoan.totalLoanAmount * 0.01)).toLocaleString()}</span>
+                      <div className="bg-white p-5 rounded-xl border shadow-sm ring-1 ring-black/5 dark:bg-zinc-900/50 space-y-6">
+
+                        {/* 1. Key Metrics (Highlight) */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-muted/20 p-3 rounded-lg border border-border/50">
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Loan Amount</p>
+                            <p className="text-xl font-bold text-foreground">₹{selectedLoan.totalLoanAmount.toLocaleString()}</p>
+                          </div>
+                          <div className="bg-muted/20 p-3 rounded-lg border border-border/50">
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">EMI Amount</p>
+                            <p className="text-xl font-bold text-primary">₹{selectedLoan.emiAmount.toLocaleString()}</p>
+                          </div>
+                        </div>
+
+                        <Separator className="bg-border/50" />
+
+                        {/* 2. Detailed Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-y-5 gap-x-4">
+
+                          {/* Row 1: Config */}
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Loan ID</p>
+                            <p className="text-sm font-mono font-medium">{selectedLoan.loanNumber}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Scheme</p>
+                            <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{selectedLoan.loanScheme} / {selectedLoan.interestType}</Badge>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Frequency</p>
+                            <p className="text-sm font-medium">{selectedLoan.repaymentFrequency}</p>
+                          </div>
+
+                          {/* Row 2: Terms */}
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Interest Rate</p>
+                            <p className="text-sm font-medium">{selectedLoan.interestRate}% {selectedLoan.interestRateUnit}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Tenure</p>
+                            <p className="text-sm font-medium">{selectedLoan.indefiniteTenure ? 'Indefinite' : `${selectedLoan.tenureMonths} ${selectedLoan.tenureUnit || 'Months'}`}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Disbursal Date</p>
+                            <p className="text-sm font-medium">{selectedLoan.disbursedDate ? new Date(selectedLoan.disbursedDate).toLocaleDateString('en-GB') : '-'}</p>
+                          </div>
+
+                          {/* Address Row */}
+                          <div className="col-span-2 md:col-span-3">
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Address</p>
+                            <p className="text-sm font-medium leading-relaxed text-foreground/80">{selectedLoan.address || "No Address Provided"}</p>
+                          </div>
+
+                          {/* Row 3: Progress */}
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Total Payable</p>
+                            <p className="text-sm font-bold text-foreground">
+                              {selectedLoan.indefiniteTenure ? 'Variable' : `₹${(selectedLoan.totalPayable || 0).toLocaleString()}`}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Total Paid</p>
+                            <p className="text-sm font-bold text-emerald-600">₹{(selectedLoan.totalPaid || 0).toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Next Due</p>
+                            <p className="text-sm font-medium">
+                              {selectedLoan.nextPaymentDate ? new Date(selectedLoan.nextPaymentDate).toLocaleDateString('en-GB') : 'Completed'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <Separator className="bg-border/50" />
+
+                        {/* 3. Outstanding Summary (Dynamic) */}
+                        <div className="bg-red-50/50 dark:bg-red-950/10 p-4 rounded-lg border border-red-100 dark:border-red-900/30 space-y-3">
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-muted-foreground">Principal Balance</span>
+                            <span className="font-semibold">₹{(selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount).toLocaleString()}</span>
+                          </div>
+
+                          {/* Accrued Interest (Only for Reducing/Indefinite) */}
+                          {(selectedLoan.interestType === 'Reducing' || selectedLoan.indefiniteTenure) && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-muted-foreground">Accrued Interest</span>
+                              <span className="font-semibold text-blue-600">+ ₹{(selectedLoan.accumulatedInterest || 0).toLocaleString()}</span>
+                            </div>
+                          )}
+
+                          {/* Outstanding Penalty */}
+                          {(selectedLoan.outstandingPenalty || 0) > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-muted-foreground">Penalty</span>
+                              <span className="font-semibold text-red-600">+ ₹{(selectedLoan.outstandingPenalty || 0).toLocaleString()}</span>
+                            </div>
+                          )}
+
+                          <div className="border-t border-red-200/50 dark:border-red-800/30 pt-2 flex justify-between items-center">
+                            <span className="text-xs font-bold text-red-700 uppercase tracking-wider">Total to Close</span>
+                            <span className="text-lg font-bold text-red-700">
+                              ₹{((selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount) + (selectedLoan.accumulatedInterest || 0) + (selectedLoan.outstandingPenalty || 0)).toLocaleString()}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="flex justify-between items-center pt-1">
-                        <span className="text-[10px] font-bold uppercase text-muted-foreground">Total Repayable</span>
-                        <span className="font-mono font-bold text-base">₹{((selectedLoan.totalLoanAmount) + (selectedLoan.totalLoanAmount * (selectedLoan.interestRate / 100) * (selectedLoan.tenureMonths / 12))).toLocaleString()}</span>
+                      {/* Original Loan Details (Collapsed/Small) */}
+                      <div className="pt-2">
+                        <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                          <span>Original Loan:</span>
+                          <span>₹{selectedLoan.totalLoanAmount.toLocaleString()}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -466,29 +692,53 @@ export default function QuickPaymentPage() {
             </div>
 
             {/* DOCKED FOOTER */}
-            <div className="h-auto border-t bg-white dark:bg-zinc-950 p-2 flex flex-row items-center justify-between z-40 gap-3 shrink-0">
-              <div className="flex items-center gap-3">
+            <div className="h-auto border-t bg-white dark:bg-zinc-950 p-2 flex flex-col md:flex-row items-center justify-between z-40 gap-3 shrink-0 overflow-x-auto">
+              <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
                 <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary dark:bg-primary/20">
                   <Wallet className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-0">Total Due</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-0">
+                    {/* Dynamic Label */}
+                    {(selectedLoan.nextPaymentAmount || 0) <= 0
+                      ? "Status"
+                      : (new Date(selectedLoan.nextPaymentDate || '') < new Date() ? "Overdue Since" : "Next Due On")
+                    }
+                  </p>
                   <div className="flex items-center gap-2">
-                    <span className="text-xl font-bold text-foreground tracking-tight">₹{selectedLoan.emiAmount.toLocaleString()}</span>
-                    {((selectedLoan as any).daysLate || 0) > 0 && (
-                      <Badge variant="secondary" className="h-4 px-1 text-[9px] font-bold rounded-md bg-red-100/50 text-red-600 border-red-100 hover:bg-red-100">
-                        {(selectedLoan as any).daysLate}d Late
-                      </Badge>
+                    <span className={cn(
+                      "text-xl font-bold tracking-tight",
+                      (selectedLoan.nextPaymentAmount || 0) <= 0 ? "text-emerald-600" : "text-foreground"
+                    )}>
+                      {/* Dynamic Amount */}
+                      {(selectedLoan.nextPaymentAmount || 0) <= 0
+                        ? "All Caught Up"
+                        : `₹${(selectedLoan.nextPaymentAmount || selectedLoan.emiAmount).toLocaleString()}`
+                      }
+                    </span>
+
+                    {/* Due Date or Overdue Badge */}
+                    {(selectedLoan.nextPaymentAmount || 0) > 0 && selectedLoan.nextPaymentDate && (
+                      new Date(selectedLoan.nextPaymentDate!) < new Date() ? (
+                        <Badge variant="secondary" className="h-4 px-1 text-[9px] font-bold rounded-md bg-red-100/50 text-red-600 border-red-100 hover:bg-red-100">
+                          {Math.ceil((new Date().getTime() - new Date(selectedLoan.nextPaymentDate!).getTime()) / (1000 * 3600 * 24))}d Late
+                        </Badge>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground font-mono bg-muted/50 px-1.5 py-0.5 rounded-sm">
+                          {new Date(selectedLoan.nextPaymentDate!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                        </span>
+                      )
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-1 justify-end">
+
+              <div className="flex flex-col md:flex-row items-end md:items-center gap-2 w-full md:w-auto mt-2 md:mt-0">
                 {checkPermission(PERMISSIONS.CREATE_PAYMENT) ? (
                   <>
                     {/* SPLIT TOGGLE */}
-                    <div className="flex items-center gap-2 mr-2">
+                    <div className="flex items-center gap-2 mb-2 md:mb-0">
                       <label htmlFor="split-mode" className="text-xs font-bold text-muted-foreground cursor-pointer select-none">Split</label>
                       <Switch
                         id="split-mode"
@@ -504,158 +754,204 @@ export default function QuickPaymentPage() {
                     </div>
 
                     <div className={cn(
-                      "flex gap-2 bg-muted/40 p-1 pr-1.5 pl-2 rounded-md border ring-1 ring-black/5 focus-within:ring-primary/20 transition-all flex-1 md:flex-none justify-end",
-                      isSplitMode ? "flex-col items-end h-auto gap-1" : "items-center"
+                      "flex gap-2 bg-muted/40 p-1 pr-1.5 pl-2 rounded-md border ring-1 ring-black/5 focus-within:ring-primary/20 transition-all w-full md:w-auto",
+                      isSplitMode ? "flex-col items-end h-auto gap-1" : "flex-col md:flex-row items-stretch md:items-center"
                     )}>
 
-                      {/* Payment Date (Backdated) */}
-                      <div className="flex items-center gap-1 mr-2">
-                        <Input
-                          type="date"
-                          className="h-7 text-xs border-transparent bg-transparent hover:bg-white/50 focus:bg-white focus:border-input transition-colors w-[110px] p-0 px-2"
-                          value={contributionDate}
-                          onChange={(e) => setContributionDate(e.target.value)}
-                        />
-                        {!isSplitMode && <div className="h-4 w-[1px] bg-border mx-1" />}
-                      </div>
-
-                      {/* Narrative Input (New) */}
-                      <div className={cn("w-full md:w-auto flex items-center transition-all", isSplitMode ? "w-full mb-1" : "mr-2")}>
-                        <Input
-                          placeholder="Remark / Particulars (Optional)"
-                          className="h-7 text-xs border-transparent bg-transparent hover:bg-white/50 focus:bg-white focus:border-input transition-colors w-[180px]"
-                          value={narrative}
-                          onChange={(e) => setNarrative(e.target.value)}
-                        />
-                        {!isSplitMode && <div className="h-4 w-[1px] bg-border mx-2" />}
-                      </div>
-
-                      {payments.map((payment, index) => {
-                        // If not split mode, only show first
-                        if (!isSplitMode && index > 0) return null;
-
-                        return (
-                          <div key={index} className="flex items-center w-full justify-end animate-in slide-in-from-right-2 duration-300">
-                            {isSplitMode && index > 0 && <div className="h-[1px] w-full bg-border/50 absolute top-0" />}
-
-                            {/* Mode Select */}
-                            <Select
-                              value={payment.mode}
-                              onValueChange={(val) => updatePaymentRow(index, 'mode', val)}
-                            >
-                              <SelectTrigger className="h-7 w-[110px] text-xs font-medium border-none bg-transparent shadow-none focus:ring-0 px-2 text-muted-foreground mr-2">
-                                <SelectValue placeholder="Mode" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="cash">Cash</SelectItem>
-                                <SelectItem value="upi">UPI</SelectItem>
-                                <SelectItem value="bank">Bank Transfer</SelectItem>
-                                <SelectItem value="cheque">Cheque</SelectItem>
-                                <SelectItem value="wallet">Wallet</SelectItem>
-                              </SelectContent>
-                            </Select>
-
-                            <div className="h-4 w-[1px] bg-border mr-2" />
-                            <span className="text-muted-foreground font-bold text-sm">₹</span>
-
-                            {/* Amount Input */}
+                      {selectedLoan.status !== 'Closed' && selectedLoan.status !== 'Rejected' ? (
+                        <>
+                          {/* Payment Date (Backdated) */}
+                          <div className="flex items-center gap-1 w-full md:w-auto border-b md:border-b-0 border-border/50 pb-1 md:pb-0 mb-1 md:mb-0 shrink-0">
                             <Input
-                              className="border-none bg-transparent shadow-none w-full md:w-[80px] text-base font-bold p-0 focus-visible:ring-0 h-7 text-right"
-                              placeholder="0"
-                              value={payment.amount}
-                              onChange={(e) => updatePaymentRow(index, 'amount', e.target.value)}
+                              type="date"
+                              className="h-7 text-xs border-transparent bg-transparent hover:bg-white/50 focus:bg-white focus:border-input transition-colors w-full md:w-[135px] p-0 px-2"
+                              value={contributionDate}
+                              onChange={(e) => setContributionDate(e.target.value)}
+                              max={new Date().toISOString().split('T')[0]} // Prevent future dates
+                              min={selectedLoan.disbursedDate} // Prevent pre-disbursement
                             />
+                            {!isSplitMode && <div className="hidden md:block h-4 w-[1px] bg-border mx-1" />}
+                          </div>
 
-                            {/* Remove Button (Only for Split Mode & >1 Row) */}
-                            {isSplitMode && payments.length > 1 && (
-                              <Button size="icon" variant="ghost" className="h-6 w-6 ml-1 text-muted-foreground hover:text-destructive shrink-0" onClick={() => removePaymentRow(index)}>
-                                <X className="h-3 w-3" />
+                          {/* Narrative Input (New) */}
+                          <div className={cn("flex items-center transition-all w-full md:w-auto mb-1 md:mb-0 shrink-0", isSplitMode ? "w-full" : "w-auto")}>
+                            <Input
+                              placeholder="Remark / Particulars (Optional)"
+                              className="h-7 text-xs border-transparent bg-transparent hover:bg-white/50 focus:bg-white focus:border-input transition-colors w-full md:w-[220px]"
+                              value={narrative}
+                              onChange={(e) => setNarrative(e.target.value)}
+                            />
+                            {!isSplitMode && <div className="hidden md:block h-4 w-[1px] bg-border mx-2" />}
+                          </div>
+
+                          {payments.map((payment, index) => {
+                            // If not split mode, only show first
+                            if (!isSplitMode && index > 0) return null;
+
+                            return (
+                              <div key={index} className="flex items-center w-full md:w-auto justify-end animate-in slide-in-from-right-2 duration-300">
+                                {isSplitMode && index > 0 && <div className="h-[1px] w-full bg-border/50 absolute top-0" />}
+
+                                {/* Mode Select */}
+                                <Select
+                                  value={payment.mode}
+                                  onValueChange={(val) => updatePaymentRow(index, 'mode', val)}
+                                >
+                                  <SelectTrigger className="h-7 w-[110px] text-xs font-medium border-none bg-transparent shadow-none focus:ring-0 px-2 text-muted-foreground mr-2">
+                                    <SelectValue placeholder="Mode" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="cash">Cash</SelectItem>
+                                    <SelectItem value="upi">UPI</SelectItem>
+                                    <SelectItem value="bank">Bank Transfer</SelectItem>
+                                    <SelectItem value="cheque">Cheque</SelectItem>
+                                    <SelectItem value="wallet">Wallet</SelectItem>
+                                  </SelectContent>
+                                </Select>
+
+                                <div className="h-4 w-[1px] bg-border mr-2" />
+                                <span className="text-muted-foreground font-bold text-sm">₹</span>
+
+                                {/* Amount Input */}
+                                <Input
+                                  className="border-none bg-transparent shadow-none w-full md:w-[80px] text-base font-bold p-0 focus-visible:ring-0 h-7 text-right"
+                                  placeholder="0"
+                                  value={payment.amount}
+                                  onChange={(e) => updatePaymentRow(index, 'amount', e.target.value)}
+                                />
+
+                                {/* Remove Button (Only for Split Mode & >1 Row) */}
+                                {isSplitMode && payments.length > 1 && (
+                                  <Button size="icon" variant="ghost" className="h-6 w-6 ml-1 text-muted-foreground hover:text-destructive shrink-0" onClick={() => removePaymentRow(index)}>
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
+                            );
+                          })}
+
+                          {/* Actions Row */}
+                          <div className={cn("flex items-center gap-2", isSplitMode ? "w-full justify-between mt-1 pt-1 border-t border-dashed border-border/50" : "")}>
+                            {isSplitMode && (
+                              <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] gap-1 text-primary hover:text-primary/80 -ml-1" onClick={addPaymentRow}>
+                                <Plus className="h-3 w-3" /> Add Mode
                               </Button>
                             )}
+
+                            {!isSplitMode && <div className="h-4 w-[1px] bg-border mx-1" />}
+
+                            {/* Preclose Button */}
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={isSubmitting}
+                              className="h-7 px-3 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:text-red-400 dark:hover:bg-red-900/20"
+                              onClick={() => {
+                                const totalDue =
+                                  (selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount) +
+                                  (selectedLoan.accumulatedInterest || 0) +
+                                  (selectedLoan.outstandingPenalty || 0);
+
+                                setPayments([{ mode: "cash", amount: totalDue.toString() }]);
+                                setNarrative("Loan Preclosure / Foreclosure");
+                                setIsSplitMode(false);
+                              }}
+                            >
+                              {isSubmitting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Preclose"}
+                            </Button>
+
+                            <Button size="sm" disabled={isSubmitting} className={cn("text-xs font-bold shadow-sm", isSplitMode ? "ml-auto h-7 px-4" : "h-7 px-3")} onClick={handlePayment}>
+                              {isSubmitting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                              Collect {isSplitMode && "All"}
+                            </Button>
                           </div>
-                        );
-                      })}
-
-                      {/* Actions Row */}
-                      <div className={cn("flex items-center gap-2", isSplitMode ? "w-full justify-between mt-1 pt-1 border-t border-dashed border-border/50" : "")}>
-                        {isSplitMode && (
-                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] gap-1 text-primary hover:text-primary/80 -ml-1" onClick={addPaymentRow}>
-                            <Plus className="h-3 w-3" /> Add Mode
-                          </Button>
-                        )}
-
-                        {!isSplitMode && <div className="h-4 w-[1px] bg-border mx-1" />}
-
-                        <Button size="sm" className={cn("text-xs font-bold shadow-sm", isSplitMode ? "ml-auto h-7 px-4" : "h-7 px-3")} onClick={handlePayment}>
-                          Collect {isSplitMode && "All"}
-                        </Button>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-xs text-muted-foreground italic pr-4">You do not have permission to collect payments.</p>
+                        </>
+                      ) : (
+                        /* Closed/Rejected State */
+                        <div className="flex items-center justify-center p-3 w-full bg-muted/20 rounded-md border border-dashed text-xs text-muted-foreground font-medium">
+                          Loan is {selectedLoan.status}
+                        </div>
+                      )}
+                    </>
+                    ) : (
+                    /* Permission Denied State */
+                    <p className="text-xs text-muted-foreground italic pr-4">You do not have permission to collect payments.</p>
                 )}
-              </div>
-            </div>
-          </>
-        ) : (
-          /* EMPTY STATE */
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-muted/5">
-            <div className="relative mb-6 group">
-              <div className="absolute inset-0 bg-primary/10 blur-3xl opacity-20 group-hover:opacity-40 transition-opacity" />
-              <div className="relative h-24 w-24 rounded-2xl bg-white border shadow-sm flex items-center justify-center dark:bg-zinc-900">
-                <Wallet className="h-10 w-10 text-primary/80" />
-              </div>
-            </div>
-            <h3 className="text-xl font-bold tracking-tight text-foreground">Select Customer</h3>
-            <p className="text-muted-foreground max-w-xs mt-2 text-sm">
-              Select from the list to view Ledger & take payment.
-            </p>
-          </div>
-        )}
-        {/* Receipt Dialog */}
-        <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
-          <DialogContent className="max-w-[fit-content] w-auto p-0 bg-transparent border-none shadow-none text-transparent">
-            <DialogTitle className="sr-only">Receipt Preview</DialogTitle>
-
-            <div className="relative bg-white dark:bg-zinc-950 rounded-lg shadow-2xl overflow-hidden max-w-[95vw] md:max-w-5xl w-full flex flex-col">
-              <div className="flex justify-end p-4 border-b bg-muted/20 print:hidden gap-3">
-                <Button
-                  onClick={() => {
-                    const originalTitle = document.title;
-                    document.title = `Receipt_${selectedLoan?.loanNumber}_${selectedLoan?.customerName?.replace(/\s+/g, '_')}`;
-                    handlePrint();
-                    setTimeout(() => document.title = originalTitle, 1000);
-                  }}
-                  variant="outline"
-                  className="gap-2 font-bold"
-                >
-                  <Download className="h-4 w-4" /> Save PDF
-                </Button>
-                <Button onClick={handlePrint} className="gap-2 font-bold shadow-sm">
-                  <Printer className="h-4 w-4" /> Print
-                </Button>
-              </div>
-
-              <div className="p-0 overflow-auto max-h-[85vh] bg-gray-100/50 dark:bg-zinc-900/50 flex justify-center">
-                <div className="origin-top scale-[0.6] sm:scale-[0.6]">
-                  <div ref={componentRef} className="shadow-2xl">
-                    <TemplateComponent
-                      data={{
-                        customerName: selectedLoan?.customerName || '',
-                        loanAccountNo: selectedLoan?.loanNumber || '',
-                        amount: payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toString(),
-                        paymentMode: payments.map(p => p.mode.toUpperCase()).join(' + '),
-                      }}
-                      company={companySettings}
-                    />
                   </div>
+              </div>
+            </>
+            ) : (
+            /* EMPTY STATE */
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-muted/5">
+              <div className="relative mb-6 group">
+                <div className="absolute inset-0 bg-primary/10 blur-3xl opacity-20 group-hover:opacity-40 transition-opacity" />
+                <div className="relative h-24 w-24 rounded-2xl bg-white border shadow-sm flex items-center justify-center dark:bg-zinc-900">
+                  <Wallet className="h-10 w-10 text-primary/80" />
                 </div>
               </div>
+              <h3 className="text-xl font-bold tracking-tight text-foreground">Select Customer</h3>
+              <p className="text-muted-foreground max-w-xs mt-2 text-sm">
+                Select from the list to view Ledger & take payment.
+              </p>
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-    </div>
-  );
+        )}
+            {/* Receipt Dialog */}
+            <Dialog open={showReceipt} onOpenChange={(open) => {
+              setShowReceipt(open);
+              if (!open) {
+                // User closed the receipt. NOW we refresh to show updated ledger.
+                window.location.reload();
+              }
+            }}>
+              <DialogContent className="max-w-[fit-content] w-auto p-0 bg-transparent border-none shadow-none text-transparent">
+                <DialogTitle className="sr-only">Receipt Preview</DialogTitle>
+
+                <div className="relative bg-white dark:bg-zinc-950 text-foreground rounded-lg shadow-2xl overflow-hidden max-w-[95vw] md:max-w-5xl w-full flex flex-col">
+                  <div className="flex justify-end p-4 border-b bg-muted/20 print:hidden gap-3">
+                    <Button
+                      onClick={() => {
+                        const originalTitle = document.title;
+                        document.title = `Receipt_${selectedLoan?.loanNumber}_${selectedLoan?.customerName?.replace(/\s+/g, '_')}`;
+                        handlePrint();
+                        setTimeout(() => document.title = originalTitle, 1000);
+                      }}
+                      variant="outline"
+                      className="gap-2 font-bold"
+                    >
+                      <Download className="h-4 w-4" /> Save PDF
+                    </Button>
+                    <Button onClick={handlePrint} className="gap-2 font-bold shadow-sm">
+                      <Printer className="h-4 w-4" /> Print
+                    </Button>
+                  </div>
+
+                  <div className="p-0 overflow-auto max-h-[85vh] bg-gray-100/50 dark:bg-zinc-900/50 flex justify-center">
+                    <div className="origin-top scale-[0.6] sm:scale-[0.6]">
+                      <div ref={componentRef} className="shadow-2xl">
+                        <TemplateComponent
+                          data={{
+                            customerName: selectedLoan?.customerName || '',
+                            loanAccountNo: selectedLoan?.loanNumber || '',
+                            amount: lastPaymentData.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toString(),
+                            paymentMode: lastPaymentData.map(p => p.mode.toUpperCase()).join(' + '),
+                          }}
+                          company={companySettings}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+      </div >
+      );
+}
+
+      export default function QuickPaymentPage() {
+  return (
+      <Suspense fallback={<div className="h-screen w-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
+        <QuickPaymentContent />
+      </Suspense>
+      );
 }

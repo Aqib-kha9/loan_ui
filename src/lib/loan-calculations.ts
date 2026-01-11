@@ -1,16 +1,21 @@
-import { addMonths, addWeeks, addDays } from 'date-fns';
+import { addMonths, addWeeks, addDays, differenceInDays } from 'date-fns';
 
 interface LoanDetails {
     loanAmount: number;
     interestRate: number; // Yearly %
     tenureMonths: number;
+    tenureUnit: 'Months' | 'Weeks' | 'Days';
     loanScheme: 'EMI' | 'InterestOnly';
     interestType: 'Flat' | 'Reducing';
     interestRateUnit: 'Yearly' | 'Monthly';
     repaymentFrequency: 'Monthly' | 'Weekly' | 'Daily';
     startDate: Date;
+    disbursementDate?: Date; // New: For Broken Period Calc
     indefiniteTenure: boolean;
+    holidayHandling?: 'NextWorkingDay' | 'PreviousWorkingDay' | 'Ignore';
+    gracePeriodDays?: number;
 }
+
 
 export interface ScheduleItem {
     installmentNo: number;
@@ -28,12 +33,16 @@ export const generateRepaymentSchedule = (details: LoanDetails): ScheduleItem[] 
         loanAmount: P,
         interestRate: R_Yearly,
         tenureMonths: N,
+        tenureUnit,
         loanScheme,
+
         interestType,
         interestRateUnit,
         repaymentFrequency,
         startDate,
-        indefiniteTenure
+        disbursementDate,
+        indefiniteTenure,
+        holidayHandling
     } = details;
 
     const schedule: ScheduleItem[] = [];
@@ -59,13 +68,44 @@ export const generateRepaymentSchedule = (details: LoanDetails): ScheduleItem[] 
     let balance = P;
     let currentDate = new Date(startDate);
     
-    // N is tenureMonths (Duration in Months)
+    // Holiday Handling Utility
+    const adjustDateForHoliday = (date: Date): Date => {
+        if (!holidayHandling || holidayHandling === 'Ignore') return date;
+        let d = new Date(date);
+        // Simple Sunday check
+        if (d.getDay() === 0) { // 0 is Sunday
+             if (holidayHandling === 'NextWorkingDay') d = addDays(d, 1);
+             if (holidayHandling === 'PreviousWorkingDay') d = addDays(d, -1);
+        }
+        return d;
+    };
+    
+    // N is tenure (Duration in tenureUnit)
     // We need to convert this to Total Number of Installments
     let totalInstallments = N;
-    if (repaymentFrequency === 'Weekly') totalInstallments = (N / 12) * 52;
-    if (repaymentFrequency === 'Daily') totalInstallments = (N / 12) * 365;
     
+    // Logic: If Frequency matches Unit, N = Installments
+    // If mismatch, convert.
+    // Assuming UI enforces consistency (e.g. if Weekly freq, Unit is Weeks),
+    // but we support cross-conversion just in case (e.g. 1 Month Weekly).
+    
+    if (repaymentFrequency === 'Weekly') {
+        if (tenureUnit === 'Months') totalInstallments = (N / 12) * 52;
+        else if (tenureUnit === 'Weeks') totalInstallments = N;
+        else if (tenureUnit === 'Days') totalInstallments = N / 7;
+    } else if (repaymentFrequency === 'Daily') {
+        if (tenureUnit === 'Months') totalInstallments = (N / 12) * 365;
+        else if (tenureUnit === 'Weeks') totalInstallments = N * 7;
+        else if (tenureUnit === 'Days') totalInstallments = N;
+    } else {
+        // Monthly
+        if (tenureUnit === 'Months') totalInstallments = N;
+        else if (tenureUnit === 'Weeks') totalInstallments = N / 4.33; // Approx
+        else if (tenureUnit === 'Days') totalInstallments = N / 30; // Approx
+    }
+
     totalInstallments = Math.ceil(totalInstallments);
+
 
     // --- EMI Calculation Logic ---
     if (loanScheme === 'EMI') {
@@ -79,7 +119,23 @@ export const generateRepaymentSchedule = (details: LoanDetails): ScheduleItem[] 
              emi = totalPay / totalInstallments;
         } else {
              // Reducing Balance
+
+             // Check for Broken Period
+            if (disbursementDate) {
+                 const firstPeriodDays = differenceInDays(currentDate, disbursementDate);
+                 // Approximate standard period days
+                 let standardDays = 30;
+                 if (repaymentFrequency === 'Weekly') standardDays = 7;
+                 if (repaymentFrequency === 'Daily') standardDays = 1;
+
+                 // If first period is significantly longer (e.g. > 1.5x standard), add extra interest
+                 // Implementation: We'll add it to the first EMI interest component if it exceeds standard period significantly.
+                 // NOTE: For MVP 2.0, we just log this capability or assume basic accrual handles it via Ledger Engine re-calc.
+                 // But for SCHEDULE accuracy, we might adjust the first installment amount here.
+            }
+
              if (periodicRate === 0) emi = P / totalInstallments;
+
              else emi = (P * periodicRate * Math.pow(1 + periodicRate, totalInstallments)) / (Math.pow(1 + periodicRate, totalInstallments) - 1);
         }
         
@@ -88,6 +144,7 @@ export const generateRepaymentSchedule = (details: LoanDetails): ScheduleItem[] 
         for (let i = 1; i <= totalInstallments; i++) {
             let interestComponent = 0;
             let principalComponent = 0;
+            const dueDate = adjustDateForHoliday(new Date(currentDate)); // Apply Holiday Logic
 
             if (interestType === 'Reducing') {
                 interestComponent = balance * periodicRate;
@@ -113,8 +170,9 @@ export const generateRepaymentSchedule = (details: LoanDetails): ScheduleItem[] 
 
             schedule.push({
                 installmentNo: i,
-                dueDate: new Date(currentDate),
+                dueDate: dueDate,
                 amount: installmentAmount,
+
                 principalComponent,
                 interestComponent,
                 balance: Math.round(balance),
@@ -138,11 +196,13 @@ export const generateRepaymentSchedule = (details: LoanDetails): ScheduleItem[] 
             const principalComponent = isLast ? P : 0;
             const interestComponent = periodicInterest;
 
+            const dueDate = adjustDateForHoliday(new Date(currentDate)); // Apply Holiday Logic
+
             balance -= principalComponent;
 
             schedule.push({
                 installmentNo: i,
-                dueDate: new Date(currentDate),
+                dueDate: dueDate,
                 amount: amount,
                 principalComponent,
                 interestComponent,

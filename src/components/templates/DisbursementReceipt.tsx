@@ -35,7 +35,7 @@ interface DisbursementReceiptProps {
 
 export const DisbursementReceipt = React.forwardRef<HTMLDivElement, DisbursementReceiptProps>(({ data, company }, ref) => {
     return (
-        <div ref={ref} className="w-[210mm] min-h-[297mm] bg-white text-black p-8 font-serif leading-relaxed text-sm relative print:p-0 print:w-full">
+        <div ref={ref} className="w-[210mm] min-h-[297mm] bg-white text-black p-8 font-serif leading-relaxed text-sm relative print:p-10 print:w-full">
 
             {/* HEADER */}
             <div className="flex justify-between items-start mb-6 border-b-2 border-slate-800 pb-4">

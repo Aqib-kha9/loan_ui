@@ -1,12 +1,12 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useReactToPrint } from "react-to-print";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
     Table,
     TableBody,
@@ -15,32 +15,146 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 
+import { generateLedger, LedgerEntry } from "@/lib/ledger-utils";
+import { mapLoanToFrontend } from "@/lib/mapper";
+import { LoanAccount } from "@/lib/mock-data";
+import { ArrowLeft, Download, IndianRupee, Calendar, User, Phone, MapPin, Receipt, Loader2, Trash2, Printer } from "lucide-react";
+import { toast } from "sonner";
+import { useAuth } from "@/components/providers/auth-provider";
+import { PERMISSIONS } from "@/lib/constants/permissions";
+import AccessDenied from "@/components/auth/access-denied";
+import { useRouter } from "next/navigation";
+import { useReactToPrint } from "react-to-print";
 import { useSettings } from "@/components/providers/settings-provider";
-import { getTemplate } from "@/components/templates/registry";
-import { getLoanDetails } from "@/lib/mock-data";
-import { generateLedger } from "@/lib/ledger-utils";
-import { ArrowLeft, Printer, Download, IndianRupee, Calendar, User, Phone, MapPin, Receipt, Share2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { DisbursementReceipt } from "@/components/templates/DisbursementReceipt";
 
 export default function LoanLedgerPage() {
     const params = useParams();
     const id = params.id as string;
-    const loan = getLoanDetails(id);
+    const router = useRouter();
 
-    // Settings & Template Logic
-    const { companySettings, printTemplate } = useSettings();
-    const selectedTemplateConfig = getTemplate(printTemplate);
-    const StatementComponent = selectedTemplateConfig?.statementComponent;
+    // State
+    const [loan, setLoan] = useState<LoanAccount | null>(null); // Type updated
+    const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const { checkPermission, isLoading: isAuthLoading } = useAuth();
+    const { companySettings } = useSettings();
+    const receiptRef = useRef<HTMLDivElement>(null);
 
-    const componentRef = useRef<HTMLDivElement>(null);
-
-    const handlePrint = useReactToPrint({
-        contentRef: componentRef,
-        documentTitle: `Ledger_${loan?.loanNumber || id}`,
+    const handlePrintReceipt = useReactToPrint({
+        contentRef: receiptRef,
+        documentTitle: `Disbursement_Receipt_${id}`,
+        pageStyle: `
+            @page {
+                size: A4;
+                margin: 0mm;
+            }
+            @media print {
+                body {
+                    -webkit-print-color-adjust: exact;
+                }
+            }
+        `
     });
+
+    // Fetch Loan Data
+    useEffect(() => {
+        const fetchLoan = async () => {
+            try {
+                const res = await fetch(`/api/loans/${id}`);
+                const data = await res.json();
+
+                if (data.success) {
+                    const mappedLoan = mapLoanToFrontend(data.loan);
+                    setLoan(mappedLoan);
+                    const entries = generateLedger(mappedLoan);
+                    setLedgerEntries(entries);
+                } else {
+                    toast.error(data.error || "Failed to load loan details");
+                }
+            } catch (error) {
+                console.error("Error fetching loan:", error);
+                toast.error("Error loading loan details");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        if (id) {
+            fetchLoan();
+        }
+    }, [id]);
+
+    if (isAuthLoading) return (
+        <div className="flex flex-col items-center justify-center h-[calc(100vh-5rem)]">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+    );
+
+    if (!checkPermission(PERMISSIONS.VIEW_LOANS)) {
+        return <AccessDenied message="You do not have permission to view loan details." />;
+    }
+
+    // Fetch Loan Data
+
+    const handleDelete = async () => {
+        if (!confirm("Are you sure you want to delete this loan? This action cannot be undone.")) return;
+
+        try {
+            const toastId = toast.loading("Deleting loan...");
+            const res = await fetch(`/api/loans/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+
+            if (data.success) {
+                toast.success("Loan deleted successfully", { id: toastId });
+                router.push('/loans');
+            } else {
+                toast.error(data.error || "Failed to delete loan", { id: toastId });
+            }
+        } catch (error) {
+            console.error("Delete error:", error);
+            toast.error("An error occurred while deleting the loan");
+        }
+    };
+
+    const handleExportCSV = () => {
+        if (!ledgerEntries.length || !loan) return;
+
+        const headers = ["Date", "Particulars", "Ref No", "Debit", "Credit", "Balance"];
+        const rows = ledgerEntries.map(entry => [
+            new Date(entry.date).toLocaleDateString("en-GB"), // DD/MM/YYYY
+            `"${entry.particulars}"`, // Quote to handle commas
+            entry.refNo,
+            entry.debit > 0 ? entry.debit : 0,
+            entry.credit > 0 ? entry.credit : 0,
+            entry.balance
+        ]);
+
+        const csvContent = [
+            headers.join(","),
+            ...rows.map(r => r.join(","))
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `LoanLedger_${loan.loanNumber}.csv`);
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    if (isLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center h-[calc(100vh-5rem)]">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-muted-foreground mt-2">Loading ledger...</p>
+            </div>
+        );
+    }
 
     if (!loan) {
         return (
@@ -53,13 +167,13 @@ export default function LoanLedgerPage() {
         );
     }
 
-    // Ledger Calculation (On-screen view logic)
-    const ledgerEntries = generateLedger(loan);
-
     // Calculate Totals for Print
     const totalInterest = ledgerEntries.reduce((sum, t) => sum + (t.type === 'Interest' ? t.debit : 0), 0);
     const totalPaid = ledgerEntries.reduce((sum, t) => sum + t.credit, 0);
     const closingBalance = ledgerEntries.length > 0 ? ledgerEntries[ledgerEntries.length - 1].balance : 0;
+
+    // Use mapped fields directly
+    const customerName = loan.customerName;
 
     // Data Structure for the Print Template
     const statementData = {
@@ -67,10 +181,10 @@ export default function LoanLedgerPage() {
         loanAccountNo: loan.loanNumber,
         address: loan.address,
         mobile: loan.mobile,
-        sanctionDate: (loan as any).disbursedDate || new Date().toISOString(), // Fallback
+        sanctionDate: (loan as any).disbursedDate || new Date().toISOString(),
         loanAmount: loan.totalLoanAmount.toString(),
         interestRate: loan.interestRate + "%",
-        interestPaidInAdvance: (loan as any).interestPaidInAdvance, // Fix Type Error
+        interestPaidInAdvance: !!loan.interestPaidInAdvance,
         totalInterest,
         totalPaid,
         closingBalance,
@@ -102,8 +216,8 @@ export default function LoanLedgerPage() {
                     <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                             <h1 className="text-sm font-bold leading-none tracking-tight">{loan.customerName}</h1>
-                            <Badge variant={loan.status === 'Active' ? 'default' : 'secondary'} className="text-[9px] h-4 px-1 rounded-sm uppercase tracking-wider">
-                                {loan.status}
+                            <Badge variant={(loan.status as string)?.toLowerCase() === 'active' ? 'default' : 'secondary'} className="text-[9px] h-4 px-1 rounded-sm uppercase tracking-wider">
+                                {loan.status || 'Active'}
                             </Badge>
                         </div>
                         <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{loan.loanNumber} • {loan.loanType}</p>
@@ -111,14 +225,36 @@ export default function LoanLedgerPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" className="h-8 gap-2 text-xs font-semibold hidden sm:flex" onClick={() => handlePrint()}>
-                        <Printer className="h-3.5 w-3.5" /> Print
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-2 text-xs font-bold"
+                        onClick={() => handlePrintReceipt()}
+                    >
+                        <Printer className="h-3.5 w-3.5" /> Receipt
                     </Button>
-                    <Link href={`/?loan=${loan.loanNumber}`}>
-                        <Button size="sm" className="h-8 gap-2 text-xs font-bold shadow-md shadow-primary/20">
-                            <Receipt className="h-3.5 w-3.5" /> Take Payment
+
+                    {/* Add Payment Generic Link - Protected */}
+                    {checkPermission(PERMISSIONS.CREATE_PAYMENT) && (
+                        <Link href={`/?loan=${loan.loanNumber}`}>
+                            <Button size="sm" className="h-8 gap-2 text-xs font-bold shadow-md shadow-primary/20">
+                                <Receipt className="h-3.5 w-3.5" /> Take Payment
+                            </Button>
+                        </Link>
+                    )}
+
+                    {/* Delete Loan Button - Protected */}
+                    {checkPermission(PERMISSIONS.DELETE_LOAN) && (
+                        <Button
+                            variant="destructive"
+                            size="icon"
+                            className="h-8 w-8 ml-2 shadow-sm"
+                            onClick={handleDelete}
+                            title="Delete Loan"
+                        >
+                            <Trash2 className="h-4 w-4" />
                         </Button>
-                    </Link>
+                    )}
                 </div>
             </div>
 
@@ -131,8 +267,8 @@ export default function LoanLedgerPage() {
                         <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
                             <IndianRupee className="h-8 w-8 text-primary" />
                         </div>
-                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Principal</p>
-                        <p className="text-lg font-bold mt-0.5">₹{loan.totalLoanAmount.toLocaleString()}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Outstanding Principal</p>
+                        <p className="text-lg font-bold mt-0.5">₹{(loan.currentPrincipal ?? loan.totalLoanAmount).toLocaleString()}</p>
                     </div>
                     <div className="p-4 rounded-xl border bg-white dark:bg-zinc-900 shadow-sm relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -145,9 +281,10 @@ export default function LoanLedgerPage() {
                         <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
                             <Calendar className="h-8 w-8 text-blue-600" />
                         </div>
-                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Next EMI</p>
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Accrued Interest</p>
                         <p className="text-lg font-bold mt-0.5 text-blue-600">
-                            {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                            ₹{(loan.accumulatedInterest || 0).toLocaleString()}
+                            {loan.lastAccrualDate && <span className="text-[10px] text-muted-foreground font-mono ml-1">(Till {new Date(loan.lastAccrualDate).getDate()}/{new Date(loan.lastAccrualDate).getMonth() + 1})</span>}
                         </p>
                     </div>
                     <div className="p-4 rounded-xl border bg-white dark:bg-zinc-900 shadow-sm relative overflow-hidden group">
@@ -159,13 +296,14 @@ export default function LoanLedgerPage() {
                     </div>
                 </div>
 
+                {/* Ledger & Details Sections omitted for brevity but should be same as previous */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Main Ledger Table */}
                     <div className="lg:col-span-2 space-y-4">
                         <div className="rounded-xl border bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
                             <div className="px-4 py-3 border-b bg-muted/5 flex items-center justify-between">
                                 <h3 className="text-sm font-semibold">Transaction History</h3>
-                                <Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground gap-1">
+                                <Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground gap-1" onClick={handleExportCSV}>
                                     <Download className="h-3 w-3" /> Export CSV
                                 </Button>
                             </div>
@@ -226,7 +364,7 @@ export default function LoanLedgerPage() {
                                         <Phone className="h-4 w-4 text-muted-foreground" />
                                     </div>
                                     <div>
-                                        <p className="text-xs font-semibold">{loan.mobile}</p>
+                                        <p className="text-xs font-semibold">{loan.mobile || 'N/A'}</p>
                                         <p className="text-[10px] text-muted-foreground">Primary Contact</p>
                                     </div>
                                 </div>
@@ -235,7 +373,7 @@ export default function LoanLedgerPage() {
                                         <MapPin className="h-4 w-4 text-muted-foreground" />
                                     </div>
                                     <div>
-                                        <p className="text-xs font-semibold text-wrap break-words w-full">{loan.address}</p>
+                                        <p className="text-xs font-semibold text-wrap break-words w-full">{loan.address || 'N/A'}</p>
                                         <p className="text-[10px] text-muted-foreground">Billing Address</p>
                                     </div>
                                 </div>
@@ -244,20 +382,42 @@ export default function LoanLedgerPage() {
                     </div>
                 </div>
 
-                {/* Hidden Print Component */}
-                <div className="overflow-hidden h-0 w-0 absolute opacity-0 pointer-events-none">
-                    <div ref={componentRef}>
-                        {StatementComponent && (
-                            <StatementComponent
-                                data={statementData}
-                                company={companySettings}
-                            />
-                        )}
-                    </div>
-                </div>
-
                 {/* Bottom Spacer */}
                 <div className="h-12 md:hidden"></div>
+            </div>
+
+            {/* Hidden Receipt Component */}
+            <div className="hidden">
+                {loan && (
+                    <DisbursementReceipt
+                        ref={receiptRef}
+                        data={{
+                            loanAccountNo: loan.loanNumber,
+                            customerName: loan.customerName,
+                            address: loan.address,
+                            mobile: loan.mobile,
+                            disbursedDate: loan.disbursedDate,
+                            loanAmount: loan.totalLoanAmount,
+                            interestRate: loan.interestRate,
+                            tenureMonths: loan.tenureMonths,
+                            emiAmount: loan.emiAmount,
+                            processingFee: loan.processingFee || 0,
+                            netDisbursal: loan.netDisbursal || loan.totalLoanAmount,
+                            loanScheme: loan.loanScheme || 'EMI',
+                            interestPaidInAdvance: loan.interestPaidInAdvance,
+                            firstMonthInterest: loan.firstMonthInterest,
+                            paymentModes: loan.paymentModes || []
+                        }}
+                        company={{
+                            name: companySettings?.name || "FinCorp",
+                            address: companySettings?.address || "",
+                            phone: companySettings?.mobile || "",
+                            email: companySettings?.email || "",
+                            website: companySettings?.website || "",
+                            logoUrl: companySettings?.logoUrl
+                        }}
+                    />
+                )}
             </div>
         </div>
     );
