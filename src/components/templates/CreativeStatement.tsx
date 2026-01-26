@@ -89,13 +89,12 @@ export const CreativeStatement = ({ data, company }: StatementProps) => {
 
                 <div className="bg-gray-50 rounded-3xl p-8 mb-8">
                     {/* Header */}
-                    <div className="grid grid-cols-8 text-xs font-bold text-gray-400 uppercase mb-4 pl-4 border-b pb-2">
+                    <div className="grid grid-cols-7 text-xs font-bold text-gray-400 uppercase mb-4 pl-4 border-b pb-2">
                         <div className="col-span-1">Date</div>
                         <div className="col-span-2">Particulars</div>
                         <div className="text-right col-span-1">Ref</div>
                         <div className="text-right">Principal</div>
                         <div className="text-right">Interest</div>
-                        <div className="text-right">Penalty</div>
                         <div className="text-right">Total Paid</div>
                     </div>
 
@@ -111,10 +110,7 @@ export const CreativeStatement = ({ data, company }: StatementProps) => {
                                     {txn.principalComponent ? Number(txn.principalComponent).toLocaleString('en-IN') : '-'}
                                 </div>
                                 <div className="text-right text-rose-500 font-medium">
-                                    {txn.type === 'Interest' || txn.interestComponent ? Number(txn.amount).toLocaleString('en-IN') : (txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN') : '-')}
-                                </div>
-                                <div className="text-right text-gray-500">
-                                    {txn.penalty ? Number(txn.penalty).toLocaleString('en-IN') : '-'}
+                                    {txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN') : '-'}
                                 </div>
                                 <div className="text-right">
                                     {txn.isPayment ? (
@@ -123,9 +119,6 @@ export const CreativeStatement = ({ data, company }: StatementProps) => {
                                         </span>
                                     ) : '-'}
                                 </div>
-                                {/* Balance not explicitly in grid due to space, adding row below or tool tip? Let's add Balance row below or make it 12 cols if possible. 
-                                    Standard requires Balance. Adjusting to 12 cols for better fit.
-                                */}
                             </div>
                         ))}
                         {/* Re-doing the row mapping for safer layout including Balance */}
@@ -140,7 +133,6 @@ export const CreativeStatement = ({ data, company }: StatementProps) => {
                                     <th className="text-right py-2">Ref</th>
                                     <th className="text-right py-2">Princ.</th>
                                     <th className="text-right py-2">Int.</th>
-                                    <th className="text-right py-2">Pen.</th>
                                     <th className="text-right py-2">Paid</th>
                                     <th className="text-right py-2">Bal</th>
                                 </tr>
@@ -152,8 +144,7 @@ export const CreativeStatement = ({ data, company }: StatementProps) => {
                                         <td className="py-3 font-bold text-gray-800">{txn.type === 'Disbursal' ? 'Disbursal' : txn.type}</td>
                                         <td className="py-3 text-right text-purple-400 text-[10px]">{txn.refNo || '-'}</td>
                                         <td className="py-3 text-right text-gray-500">{txn.principalComponent ? Number(txn.principalComponent).toLocaleString('en-IN') : '-'}</td>
-                                        <td className="py-3 text-right text-rose-500">{txn.type === 'Interest' || txn.interestComponent ? Number(txn.amount).toLocaleString('en-IN') : (txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN') : '-')}</td>
-                                        <td className="py-3 text-right text-gray-500">{txn.penalty ? Number(txn.penalty).toLocaleString('en-IN') : '-'}</td>
+                                        <td className="py-3 text-right text-rose-500">{txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN') : '-'}</td>
                                         <td className="py-3 text-right text-emerald-600 font-bold">{txn.isPayment ? Number(txn.amount).toLocaleString('en-IN') : '-'}</td>
                                         <td className="py-3 text-right text-gray-800 font-bold">{Number(txn.balanceAfter).toLocaleString('en-IN')}</td>
                                     </tr>
@@ -161,9 +152,9 @@ export const CreativeStatement = ({ data, company }: StatementProps) => {
                             </tbody>
                             <tfoot className="font-bold text-purple-900 bg-purple-50">
                                 <tr>
-                                    <td colSpan={4} className="py-3 px-2 text-right">TOTALS</td>
+                                    <td colSpan={3} className="py-3 px-2 text-right text-xs">TOTALS</td>
+                                    <td className="py-3 text-right text-xs">-</td>
                                     <td className="py-3 text-right">{Number(data.totalInterest).toLocaleString('en-IN')}</td>
-                                    <td className="py-3 text-right">-</td>
                                     <td className="py-3 text-right">{Number(data.totalPaid).toLocaleString('en-IN')}</td>
                                     <td className="py-3 text-right">{Number(data.closingBalance).toLocaleString('en-IN')}</td>
                                 </tr>

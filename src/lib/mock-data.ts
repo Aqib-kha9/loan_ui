@@ -34,7 +34,7 @@ export type LoanAccount = {
   tenureMonths: number;
   indefiniteTenure?: boolean; 
   emisPaid: number;
-  status: "Active" | "Closed" | "NPA" | "Rejected";
+  status: "Active" | "Closed" | "NPA" | "Rejected" | "Overdue" | "Settled";
   loanType: "Personal" | "Business" | "Vehicle"; 
   loanScheme?: "EMI" | "InterestOnly" | "Bullet"; 
   repaymentFrequency?: "Monthly" | "Weekly" | "Daily" | "Yearly"; 
@@ -91,7 +91,7 @@ export type Transaction = {
   interestComponent?: number;
   penalty?: number;
   refNo?: string;
-  type: "EMI" | "Part Payment" | "Closure" | "Fee";
+  type: "EMI" | "Part Payment" | "Closure" | "Fee" | "Interest" | "Disbursal" | "Penalty";
   description?: string; 
   paymentMode?: string; 
   balanceAfter: number;

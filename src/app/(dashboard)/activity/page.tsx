@@ -24,7 +24,8 @@ import {
     SlidersHorizontal,
     X,
     FilterX,
-    Loader2
+    Loader2,
+    RefreshCcw
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -103,11 +104,6 @@ export default function ActivityPage() {
         return () => clearTimeout(timer);
     }, [searchTerm, filterDate, filters]);
 
-    // Polling with current filters
-    useEffect(() => {
-        const interval = setInterval(loadData, 10000); // Poll every 10s
-        return () => clearInterval(interval);
-    }, [searchTerm, filterDate, filters]);
 
     const filteredActivities = activities;
 
@@ -164,6 +160,17 @@ export default function ActivityPage() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
+
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 gap-2"
+                        onClick={() => loadData()}
+                        disabled={isDataLoading}
+                    >
+                        <RefreshCcw className={cn("h-3.5 w-3.5", isDataLoading && "animate-spin")} />
+                        <span className="hidden sm:inline">Refresh</span>
+                    </Button>
 
                     <Separator orientation="vertical" className="h-8 hidden md:block" />
 
@@ -386,7 +393,7 @@ export default function ActivityPage() {
                         </TableBody>
                     </Table>
                 </div>
-            </main>
-        </div>
+            </main >
+        </div >
     );
 }

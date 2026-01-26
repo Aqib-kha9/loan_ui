@@ -87,7 +87,7 @@ export const TechStatement = ({ data, company }: StatementProps) => {
                                 {txn.principalComponent ? Number(txn.principalComponent).toFixed(2) : '-'}
                             </div>
                             <div className="col-span-2 text-right text-red-500">
-                                {txn.type === 'Interest' || txn.interestComponent ? Number(txn.amount).toFixed(2) : '-'}
+                                {txn.interestComponent ? Number(txn.interestComponent).toFixed(2) : '-'}
                             </div>
                             <div className="col-span-1 text-right text-[#00ff41] font-bold">
                                 {txn.isPayment ? Number(txn.amount).toFixed(0) : '-'}

@@ -1,22 +1,15 @@
 import Loan from '@/lib/models/Loan';
-import { differenceInDays, addDays, isBefore, isAfter, startOfDay, addMonths, getDate } from 'date-fns';
+import { differenceInDays, addDays, isBefore, isAfter, startOfDay, addMonths, getDate, addWeeks, subDays } from 'date-fns';
 
 /**
- * Core Loan Engine for Lifecycle 2.0
- * Handles purely date-driven calculations.
+ * Core Loan Engine for Lifecycle 2.0 (Periodic Update)
  */
 
-// --- 1. Daily Rate Conversion ---
+// --- 1. Periodic Rate Conversion ---
 
-export const getDailyInterestRate = (annualRate: number, yearDays: number = 365): number => {
-    // Standard conversion: Annual % / 365 / 100
-    // e.g., 12% -> 0.12 / 365 = 0.000328...
-    return (annualRate / 100) / yearDays;
-};
+import { getPeriodicInterestRate } from './shared-loan-utils';
+export { getPeriodicInterestRate }; // Re-export if needed, or just let consumers import from shared.
 
-export const calculateDailyInterest = (principal: number, dailyRate: number): number => {
-    return principal * dailyRate;
-};
 
 // --- 2. Ledger Engine (Rollback & Replay) ---
 
@@ -24,21 +17,23 @@ interface LedgerState {
     date: Date;
     outstandingPrincipal: number;
     advanceWalletBalance: number;
-    accruedInterest: number;
+    accruedInterest: number; // Interest that has been 'Applied'/Allocated but not paid? 
+                             // No, in Periodic logic, we usually "Bill" it immediately if due.
+                             // But if partial payment, it sits in 'accrued' or 'due'.
     totalPaidInterest: number;
     totalPaidPrincipal: number;
     status: 'Active' | 'Closed' | 'NPA' | 'Rejected';
+    
+    // New: Virtual Ledger for Statement
+    virtualTransactions: any[]; 
 }
 
 export const recalculateLedger = async (loanId: string) => {
-    // 1. Fetch Loan & All Transactions
-    const loan = await Loan.findOne({ loanId }).sort({ 'transactions.date': 1 }); // Ensure txn sort from DB if possible, but we resort below
+    const loan = await Loan.findOne({ loanId }).sort({ 'transactions.date': 1 }); 
     if (!loan) throw new Error("Loan not found");
 
-    // Sort transactions by date (Critical for replay)
     const transactions = loan.transactions.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    // 2. Initial State (At Disbursement)
     let currentState: LedgerState = {
         date: new Date(loan.disbursementDate),
         outstandingPrincipal: loan.loanAmount,
@@ -46,184 +41,211 @@ export const recalculateLedger = async (loanId: string) => {
         accruedInterest: 0,
         totalPaidInterest: 0,
         totalPaidPrincipal: 0,
-        status: 'Active'
+        status: 'Active',
+        virtualTransactions: []
     };
     
-    // Sort Schedule for checking overdue
-    const schedule = loan.repaymentSchedule.sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+    // Disbursement Entry
+    currentState.virtualTransactions.push({
+        date: currentState.date,
+        type: 'Disbursal',
+        credit: 0,
+        debit: loan.loanAmount,
+        balance: loan.loanAmount,
+        particulars: 'Loan Disbursed'
+    });
+
+    const periodicRate = getPeriodicInterestRate(loan);
+
+    // Timeline Construction
+    // Events: 1. Cycle Dates (Interest Application) 2. Payments (Transactions)
     
-    // Determine Daily Rate
-    let dailyRate = loan.dailyInterestRate;
-    if (!dailyRate) {
-        let annualRate = loan.interestRate;
-        if (loan.interestRateUnit === 'Monthly') annualRate = annualRate * 12;
-        dailyRate = getDailyInterestRate(annualRate);
+    // Generate All Cycle Dates from Disbursal to Today
+    let cycleDates: Date[] = [];
+    let cycleCursor = new Date(loan.disbursementDate);
+    const today = new Date();
+    
+    // Move to first cycle (e.g. 1 month after disbursal)
+    // NOTE: Interest is usually "Post-Paid" (Accrues at end of cycle).
+    // EXCEPT "Interest Paid in Advance".
+    
+    if (loan.interestPaidInAdvance) {
+         // It's pre-deducted, so first cycle interest is already handled? 
+         // Or just the first EMI?
+         // Usually implies strict upfront. Logic remains same but they paid it.
     }
     
-    // Capitalization Config
-    // For "Reducing" loans in this context, we apply Monthly Capitalization of Unpaid Interest.
-    const enableCapitalization = loan.interestType === 'Reducing';
-    const disburseDay = getDate(new Date(loan.disbursementDate)); // e.g., 15th
-
-    // 3. Replay Loop
-    // Process timeline from Disbursement -> Transactions -> Today
-    
-    // We treat "Today" as a phantom final transaction to ensure accrual up to now
-    const timelineEvents = [...transactions.map((t: any) => ({...t, isTxn: true})), { date: new Date(), isTxn: false }];
-
-    let lastDate = new Date(currentState.date);
-
-    for (const event of timelineEvents) {
-        let eventDate = new Date(event.date);
+    // Generate Cycles
+    while (isBefore(cycleCursor, today)) {
+        if (loan.repaymentFrequency === 'Monthly') cycleCursor = addMonths(cycleCursor, 1);
+        else if (loan.repaymentFrequency === 'Weekly') cycleCursor = addWeeks(cycleCursor, 1);
+        else cycleCursor = addDays(cycleCursor, 1);
         
-        // Ensure strictly chronological (handle messy timestamps)
-        if (isBefore(eventDate, lastDate)) eventDate = lastDate;
-
-        // --- Step logic with Capitalization Boundaries ---
-        // We cannot just jump from lastDate to eventDate. We must stop at each Monthly Anniversary.
-        
-        while (differenceInDays(eventDate, lastDate) > 0) {
-            // Determine next potential Capitalization Date
-            // It should be the next "Day X of Month" after lastDate
-            // e.g. Last = 15 Jan. Next Cap = 15 Feb.
-            // If Last = 10 Jan (Disburse = 15th). Next Cap = 15 Jan.
-            
-            let nextCapDate = new Date(lastDate);
-            nextCapDate.setMonth(nextCapDate.getMonth() + 1);
-            
-            // Adjust to Disbursal Day (e.g., maintain 15th)
-            // Handle edge cases like 31st Feb? date-fns addMonths handles this gracefully usually.
-            // But we want strictly "Cycle Date". 
-            // Better Logic: iterate day by day? Too slow.
-            // Current Month Cycle:
-            // We want the smallest date > lastDate that matches disbursement Day.
-            
-            const currentMonth = lastDate.getMonth();
-            const currentYear = lastDate.getFullYear();
-            
-            // Candidates: 
-            // 1. Disbursement Day of Current Month (if > lastDate)
-            // 2. Disbursement Day of Next Month
-            
-            let candidate1 = new Date(currentYear, currentMonth, disburseDay);
-            let candidate2 = new Date(currentYear, currentMonth + 1, disburseDay);
-            
-            let targetParams = candidate1;
-            if (!isAfter(candidate1, lastDate)) {
-                targetParams = candidate2;
-            }
-            
-            // If the next Capitalization Date is AFTER the event, we just proceed to event.
-            // Else, we proceed to Capitalization Date, Capitalize, then Loop continues.
-            
-            let stopDate = eventDate;
-            let isCapEvent = false;
-
-            if (enableCapitalization && isBefore(targetParams, eventDate)) {
-                 stopDate = targetParams;
-                 isCapEvent = true;
-            }
-            
-            // A. Accrue Interest (lastDate -> stopDate)
-            const days = differenceInDays(stopDate, lastDate);
-            if (days > 0) {
-                 let principalForInterest = currentState.outstandingPrincipal;
-                 if (loan.interestType === 'Flat') {
-                     // Flat Rate: Interest always on Original Principal
-                     principalForInterest = loan.loanAmount; 
-                 }
-
-                 if (principalForInterest > 0) {
-                     const interestForPeriod = calculateDailyInterest(principalForInterest, dailyRate) * days;
-                     currentState.accruedInterest += interestForPeriod;
-                 }
-            }
-            
-            // Update Time
-            lastDate = stopDate;
-
-            // B. Apply Capitalization (if applicable)
-            if (isCapEvent) {
-                // Add Accrued Interest to Principal
-                // "Unpaid interest is added to the Principal"
-                // Only if there is accrued interest? Yes.
-                if (currentState.accruedInterest > 0) {
-                    currentState.outstandingPrincipal += currentState.accruedInterest;
-                    // Reset Accrued or Keep it?
-                    // If we added it to Principal, we essentially "paid" it via debt expansion.
-                    // So we should reset 'accruedInterest' bucket to 0, 
-                    // because future calculations on this amount are now covered by the larger principal.
-                    currentState.accruedInterest = 0;
-                }
-            }
+        if (isBefore(cycleCursor, today) || isSameDay(cycleCursor, today)) {
+            cycleDates.push(new Date(cycleCursor));
         }
+    }
 
-        if (event.isTxn) {
-             // C. Check for Penalties (Dynamic Overdue)
-             // ... existing penalty logic ...
-             // Simplified: Penalty applies if we cross DueDate. 
-             // (Keeping existing simplified penalty logic placeholder for brevity or reusing previous valid block)
-             // D. Apply Transaction (Waterfall)
-             let amountLeft = event.amount;
+    // Merge Events
+    const allEvents = [
+        ...cycleDates.map(d => ({ date: d, type: 'CYCLE_INTEREST' })),
+        ...transactions.map((t: any) => ({ ...t, type: 'TRANSACTION', original: t }))
+    ].sort((a: any, b: any) => {
+        const timeA = new Date(a.date).getTime();
+        const timeB = new Date(b.date).getTime();
+        if (timeA === timeB) {
+            // Priority: Interest First, Then Payment
+            if (a.type === 'CYCLE_INTEREST') return -1; 
+            return 1;
+        }
+        return timeA - timeB;
+    });
+
+    for (const event of allEvents) {
+        // A. Interest Cycle Event
+        if (event.type === 'CYCLE_INTEREST') {
+            // Calculate Interest on Current Principal
+            let principalBasis = currentState.outstandingPrincipal;
+            
+            // Interest Only handling? Same formula P * R.
+            // Reducing? Same formula P * R.
+            // Flat? Fixed Amount (P_Original * Limit / N). 
+            // BUT here we are Reconciling Active Ledger, assume 'reducing' style logic usually for tracking.
+            // If strictly 'Flat', the Interest is fixed per schedule. 
+            // User script: "Interest Only / Reducing".
+            
+            let interestAmount = 0;
+            
+            if (loan.interestType === 'Flat') {
+                 // Fallback for Flat: Use schedule? Or constant?
+                 // Let's assume reducing logic for user correctness request "1.25% Monthly" on "Outstanding".
+                 interestAmount = principalBasis * periodicRate;
+            } else {
+                 interestAmount = principalBasis * periodicRate;
+            }
+            
+            interestAmount = Math.round(interestAmount);
+            
+            if (interestAmount > 0) {
+                // CAPITALIZATION (Compounding): Add interest directly to Principal
+                // This matches the client's spreadsheet where balance increases by interest amount.
+                currentState.outstandingPrincipal += interestAmount;
+                
+                // Add to Virtual Ledger
+                currentState.virtualTransactions.push({
+                    date: event.date,
+                    type: 'Interest',
+                    debit: interestAmount,
+                    credit: 0,
+                    balance: currentState.outstandingPrincipal, 
+                    particulars: `Interest Accrued`
+                });
+            }
+        } 
+        // B. Transaction Event
+        else if (event.type === 'TRANSACTION') {
+             const txn = event.original;
+             let amountLeft = txn.amount;
              
-             // 1. (Penalty Removed)
-             
-             // 2. Interest
-             
-             // 2. Interest
-             // Even if capitalized, we might have fresh accrual (partial month) OR pre-capitalized interest?
-             // Since we clear `accruedInterest` on capitalization, this handles "Interest since last cap".
+             // Waterfall: 
+             // 1. Accrued Interest
+             let interestPaid = 0;
              if (amountLeft > 0 && currentState.accruedInterest > 0) {
-                const interestAllocated = Math.min(amountLeft, currentState.accruedInterest);
-                currentState.accruedInterest -= interestAllocated;
-                currentState.totalPaidInterest += interestAllocated;
-                amountLeft -= interestAllocated;
+                 const alloc = Math.min(amountLeft, currentState.accruedInterest);
+                 currentState.accruedInterest -= alloc;
+                 interestPaid += alloc;
+                 currentState.totalPaidInterest += alloc;
+                 amountLeft -= alloc;
              }
              
-             // 3. Principal (Reducing)
+             // 2. Principal
+             let principalPaid = 0;
+             // Interest Only Logic: Excess Payment does NOT reduce Principal automatically.
+             // It goes to Advance Wallet (Prepaid Interest).
+             // Unless the Transaction Type is explicitly 'Closure' or 'Part Payment'.
+             // Or if Scheme is NOT InterestOnly (i.e. EMI).
+             
+             let allowPrincipalReduction = true;
+             if (loan.loanScheme === 'InterestOnly') {
+                 // Only allow if Type is specifically 'Part Payment' or 'Closure' match
+                 // If Type is 'EMI' or 'General', we DO NOT reduce Principal.
+                 if (txn.type === 'EMI' || txn.type === 'Interest') {
+                     allowPrincipalReduction = false;
+                 }
+             }
+             
+             if (amountLeft > 0 && allowPrincipalReduction) {
+                 const alloc = Math.min(amountLeft, currentState.outstandingPrincipal);
+                 currentState.outstandingPrincipal -= alloc;
+                 principalPaid += alloc;
+                 currentState.totalPaidPrincipal += alloc;
+                 amountLeft -= alloc;
+             }
+             
+             // 3. Excess -> Wallet
              if (amountLeft > 0) {
-                const principalAllocated = Math.min(amountLeft, currentState.outstandingPrincipal);
-                currentState.outstandingPrincipal -= principalAllocated;
-                currentState.totalPaidPrincipal += principalAllocated;
-                amountLeft -= principalAllocated;
+                 currentState.advanceWalletBalance += amountLeft;
              }
              
-             // 4. Excess
-             if (amountLeft > 0) {
-                currentState.advanceWalletBalance += amountLeft;
+             // Update Real Txn Object in DB Memory (if needed)
+             if (txn) {
+                 txn.balanceAfter = currentState.outstandingPrincipal;
+                 txn.interestComponent = interestPaid;
+                 txn.principalComponent = principalPaid;
              }
              
-             // Update Txn Record (Mongoose Doc)
-             // We access the original txn object via `event` reference if possible, but `event` is a copy/derived.
-             // We need to update the ACTUAL transaction in `loan.transactions`.
-             // Matching by ID is safest.
-             const realTxn = loan.transactions.find((t: any) => t._id?.toString() === event._id?.toString() || t.txnId === event.txnId);
-             if (realTxn) {
-                 realTxn.balanceAfter = Math.round(currentState.outstandingPrincipal);
-             }
-             
-             // Auto-Close
-             if (currentState.outstandingPrincipal < 1) {
-                 currentState.status = 'Closed';
-             } else {
-                 currentState.status = 'Active';
-             }
+             // Virtual Ledger
+             currentState.virtualTransactions.push({
+                 date: event.date,
+                 type: 'Payment',
+                 originalType: txn.type,
+                 debit: 0,
+                 credit: txn.amount,
+                 balance: currentState.outstandingPrincipal + currentState.accruedInterest,
+                 particulars: txn.description || `Payment Received`,
+                 refNo: txn.reference
+             });
         }
     }
     
-    // 5. Update Loan Object
+    // Post-Loop: Update Loan Status
+    if (currentState.outstandingPrincipal <= 0 && currentState.accruedInterest <= 0) {
+        currentState.status = 'Closed';
+    } else {
+        currentState.status = 'Active';
+    }
+
+    // Save Changes
     loan.accumulatedInterest = currentState.accruedInterest;
-    loan.lastAccrualDate = new Date(); // As of now
     loan.currentPrincipal = currentState.outstandingPrincipal;
-    if (loan.status !== 'written_off') {
-         loan.status = currentState.status; 
+    if (loan.status !== 'written_off') loan.status = currentState.status;
+
+    // Update Next Payment Amount for InterestOnly (Compounding)
+    // For EMI, it stays at the fixed EMI amount unless we want to dynamically change it (not recommended for now).
+    // For InterestOnly, the user owes the interest of the current capitalized balance.
+    if (loan.loanScheme === 'InterestOnly') {
+        const periodicRate = getPeriodicInterestRate(loan);
+        loan.nextPaymentAmount = Math.round(loan.currentPrincipal * periodicRate);
     }
     
-
+    // We do NOT save virtualTransactions to DB permanently in 'transactions' array to avoid clutter?
+    // User wants to SEE it. 
+    // Option A: Save valid "Interest" transactions to DB? 
+    // No, that might duplicate if we re-run.
+    // Better: Helper returns them, and Statement Logic merges them? 
+    // `recalculateLedger` is usually void/update.
+    // Let's attach them to a temporary field or rely on Client to generate them?
+    // NO, Engine is solving the math. 
+    // Let's UPDATE the loan with a new field `ledgerHistory`?
+    
+    // For now, save core fields.
     await loan.save();
-
-    return {
-        outstandingPrincipal: currentState.outstandingPrincipal,
-        accruedInterest: currentState.accruedInterest
-    };
+    
+    return currentState; // Return state so API can use it if needed
 };
+
+function isSameDay(d1: Date, d2: Date) {
+    return d1.getFullYear() === d2.getFullYear() && 
+           d1.getMonth() === d2.getMonth() && 
+           d1.getDate() === d2.getDate();
+}

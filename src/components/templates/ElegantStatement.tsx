@@ -105,7 +105,7 @@ export const ElegantStatement = ({ data, company }: StatementProps) => {
                                     <span className="block text-[10px] text-[#d4af37] mt-1">{txn.refNo || '-'}</span>
                                 </td>
                                 <td className="py-4 text-right text-[#8b0000]/80">
-                                    {txn.type === 'Interest' || txn.interestComponent ? Number(txn.amount).toLocaleString('en-IN') : '-'}
+                                    {txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN') : '-'}
                                 </td>
                                 <td className="py-4 text-right text-[#006400]/80 font-medium">
                                     {txn.isPayment ? Number(txn.amount).toLocaleString('en-IN') : '-'}

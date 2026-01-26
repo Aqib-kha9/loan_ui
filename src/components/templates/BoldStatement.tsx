@@ -91,7 +91,6 @@ export const BoldStatement = ({ data, company }: StatementProps) => {
                             <th className="p-3 text-right uppercase text-xs font-black">Ref No.</th>
                             <th className="p-3 text-right uppercase text-xs font-black">Principal</th>
                             <th className="p-3 text-right uppercase text-xs font-black">Interest</th>
-                            <th className="p-3 text-right uppercase text-xs font-black">Penalty</th>
                             <th className="p-3 text-right uppercase text-xs font-black">Total Paid</th>
                             <th className="p-3 text-right uppercase text-xs font-black">Balance</th>
                         </tr>
@@ -108,10 +107,7 @@ export const BoldStatement = ({ data, company }: StatementProps) => {
                                     {txn.principalComponent ? Number(txn.principalComponent).toLocaleString('en-IN') : '-'}
                                 </td>
                                 <td className="p-3 text-right text-[#ff3333]">
-                                    {txn.type === 'Interest' || txn.interestComponent ? Number(txn.amount).toLocaleString('en-IN') : (txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN') : '-')}
-                                </td>
-                                <td className="p-3 text-right text-gray-500">
-                                    {txn.penalty ? Number(txn.penalty).toLocaleString('en-IN') : '-'}
+                                    {txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN') : '-'}
                                 </td>
                                 <td className="p-3 text-right text-green-700 font-black bg-green-50">
                                     {txn.isPayment ? Number(txn.amount).toLocaleString('en-IN') : '-'}
@@ -124,9 +120,9 @@ export const BoldStatement = ({ data, company }: StatementProps) => {
                     </tbody>
                     <tfoot className="bg-[#f0f0f0] border-t-4 border-black font-black text-sm">
                         <tr>
-                            <td colSpan={4} className="p-3 text-right">TOTALS</td>
+                            <td colSpan={3} className="p-3 text-right">TOTALS</td>
+                            <td className="p-3 text-right">-</td>
                             <td className="p-3 text-right text-[#ff3333]">{Number(data.totalInterest).toLocaleString('en-IN')}</td>
-                            <td className="p-3 text-right text-gray-500">-</td>
                             <td className="p-3 text-right text-green-700">{Number(data.totalPaid).toLocaleString('en-IN')}</td>
                             <td className="p-3 text-right">{Number(data.closingBalance).toLocaleString('en-IN')}</td>
                         </tr>

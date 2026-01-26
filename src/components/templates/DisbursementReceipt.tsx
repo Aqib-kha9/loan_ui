@@ -11,7 +11,7 @@ interface DisbursementReceiptProps {
         disbursedDate: string;
 
         loanAmount: number;
-        interestRate: number;
+        interestRate: string;
         tenureMonths: number;
         emiAmount: number;
         processingFee: number;
@@ -80,7 +80,7 @@ export const DisbursementReceipt = React.forwardRef<HTMLDivElement, Disbursement
                         <span className="font-bold">{data.tenureMonths} Months</span>
 
                         <span className="text-slate-600">Interest Rate:</span>
-                        <span className="font-bold">{data.interestRate}% / yr</span>
+                        <span className="font-bold">{data.interestRate}</span>
 
                         <span className="text-slate-600">{data.loanScheme === 'InterestOnly' ? 'Monthly Interest:' : 'Monthly EMI:'}</span>
                         <span className="font-bold">₹{data.emiAmount.toLocaleString()}</span>

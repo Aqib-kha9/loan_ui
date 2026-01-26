@@ -101,8 +101,9 @@ function QuickPaymentContent() {
   const selectedTemplate = TEMPLATE_REGISTRY.find(t => t.id === printTemplate) || TEMPLATE_REGISTRY[0];
   const TemplateComponent = selectedTemplate.receiptComponent;
 
-  // Print Logic
-  const [lastPaymentData, setLastPaymentData] = useState<any[]>([]); // Store for receipt
+  // Settings & Templates
+  const [lastPaymentData, setLastPaymentData] = useState<any[]>([]);
+  const [lastPaymentMetadata, setLastPaymentMetadata] = useState<any>(null); // For balance on receipt
   const componentRef = useRef<HTMLDivElement>(null);
   const handlePrint = useReactToPrint({
     contentRef: componentRef,
@@ -244,35 +245,17 @@ function QuickPaymentContent() {
       const totalCollected = validPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
       toast.success(`Collected ₹${totalCollected.toLocaleString()}`, { id: toastId });
 
-      // Refresh Data (Re-fetch loans to update ledger/balance)
-      // We can optimize this by just updating the local state, but re-fetch ensures sync
-      // For now, let's just trigger a re-fetch if we had a function for it, or we rely on useEffect deps?
-      // We defined fetchLoans inside useEffect, let's extract it or force reload.
-      // Easiest is to window.location.reload() or router.refresh(), but that's jarring.
-      // Better: user useEffect dependency or manual Trigger.
-
-      // Log Activity Client Side (Optional, backend does it)
-      logActivity({
-        type: 'Payment',
-        title: 'Payment Received',
-        entityName: selectedLoan.customerName,
-        amount: totalCollected,
-        action: 'Received',
-        description: `Received ₹${totalCollected.toLocaleString()} via API.`,
-        user: user?.name || 'User'
-      });
-
       // Capture Payment Data for Receipt (before clearing form)
       setLastPaymentData([...validPayments]); // Store copy
+      setLastPaymentMetadata({
+        totalBalance: data.newBalance || (data.currentPrincipal + data.accumulatedInterest) || 0
+      });
 
       // Reset Form
       setPayments([{ mode: "cash", amount: "" }]);
       setNarrative("");
       setIsSplitMode(false);
       setShowReceipt(true);
-
-      // Do NOT reload here. Let user see receipt.
-      // Refresh happens when user CLOSES the receipt dialog.
 
     } catch (error) {
       console.error("Payment API Error:", error);
@@ -383,7 +366,12 @@ function QuickPaymentContent() {
                     <div className="flex-1 min-w-0 z-10 animate-in fade-in slide-in-from-left-2 duration-300">
                       <div className="flex justify-between items-baseline mb-0.5">
                         <p className={cn("font-bold truncate text-sm transition-colors", selectedId === loan.loanNumber ? "text-primary" : "text-foreground")}>{loan.customerName}</p>
-                        <span className={cn("text-[10px] font-medium px-1.5 py-0 rounded-full flex items-center gap-1", loan.status === 'Active' ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground')}>
+                        <span className={cn(
+                          "text-[10px] font-bold px-1.5 py-0 rounded-full flex items-center gap-1",
+                          loan.status === 'Active' ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20' :
+                            loan.status === 'Overdue' ? 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/20' :
+                              'text-muted-foreground bg-muted'
+                        )}>
                           {loan.status}
                         </span>
                       </div>
@@ -397,14 +385,18 @@ function QuickPaymentContent() {
 
                         {/* Status Logic: If Next Date is Future, show PAID. Else show DUE */}
                         {(() => {
-                          const isFuture = loan.nextPaymentDate && new Date(loan.nextPaymentDate) > new Date();
-                          const isDue = !isFuture;
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const nextDate = loan.nextPaymentDate ? new Date(loan.nextPaymentDate) : null;
+                          if (nextDate) nextDate.setHours(0, 0, 0, 0);
 
-                          if (isFuture) {
+                          const isPaid = !nextDate || nextDate > today || loan.status === 'Closed';
+
+                          if (isPaid && loan.status !== 'Overdue') {
                             return (
                               <div className="flex flex-col items-end">
                                 <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-                                  <CheckCircle2 className="h-3 w-3" /> PAID
+                                  <CheckCircle2 className="h-3 w-3" /> {loan.status === 'Closed' ? 'CLOSED' : 'PAID'}
                                 </span>
                               </div>
                             );
@@ -412,11 +404,12 @@ function QuickPaymentContent() {
 
                           return (
                             <div className="flex flex-col items-end">
-                              <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest mb-[1px]">Due</span>
+                              <span className={cn("text-[8px] font-bold uppercase tracking-widest mb-[1px]", loan.status === 'Overdue' ? "text-red-600" : "text-muted-foreground")}>
+                                {loan.status === 'Overdue' ? 'Overdue' : 'Due'}
+                              </span>
                               <p className={cn(
                                 "text-xs font-bold font-mono",
-                                (loan.nextPaymentAmount || 0) > loan.emiAmount ? "text-red-600 dark:text-red-400" :
-                                  (loan.nextPaymentAmount || 0) > 0 ? "text-blue-600 dark:text-blue-400" : "text-emerald-600"
+                                loan.status === 'Overdue' ? "text-red-600 dark:text-red-400" : "text-blue-600 dark:text-blue-400"
                               )}>
                                 ₹{(loan.nextPaymentAmount || 0).toLocaleString()}
                               </p>
@@ -508,10 +501,11 @@ function QuickPaymentContent() {
                       <thead className="bg-white/95 dark:bg-zinc-900/95 text-muted-foreground font-semibold uppercase tracking-wider sticky top-0 z-20 backdrop-blur-md shadow-sm">
                         <tr>
                           <th className="px-4 py-3 border-b border-border/50">Date</th>
-                          <th className="px-4 py-3 border-b border-border/50 w-[40%] min-w-[200px]">Particulars</th>
-                          <th className="px-4 py-3 border-b border-border/50">Type</th>
-                          <th className="px-4 py-3 border-b border-border/50 text-right text-emerald-600">Credit</th>
-                          <th className="px-4 py-3 border-b border-border/50 text-right text-red-600">Debit</th>
+                          <th className="px-4 py-3 border-b border-border/50 w-[30%] min-w-[180px]">Particulars</th>
+                          <th className="px-4 py-3 border-b border-border/50">Ref No.</th>
+                          <th className="px-4 py-3 border-b border-border/50 text-right">Principal</th>
+                          <th className="px-4 py-3 border-b border-border/50 text-right text-red-600">Interest</th>
+                          <th className="px-4 py-3 border-b border-border/50 text-right text-emerald-600">Total Paid</th>
                           <th className="px-6 py-3 border-b border-border/50 text-right">Balance</th>
                         </tr>
                       </thead>
@@ -521,19 +515,21 @@ function QuickPaymentContent() {
                             <td className="px-4 py-3 font-mono text-muted-foreground/80">{new Date(entry.date).toLocaleDateString('en-GB')}</td>
                             <td className="px-4 py-3">
                               <div className="font-semibold text-foreground/90 truncate max-w-[250px]">{entry.particulars}</div>
-                              {entry.type === 'EMI' && <div className="text-[10px] text-muted-foreground mt-0.5 font-mono opacity-70">Ref: {entry.refNo || `TXN-${idx}`}</div>}
                             </td>
-                            <td className="px-4 py-3">
-                              <Badge variant="outline" className="text-[10px] font-normal border-border bg-muted/20 text-muted-foreground">{entry.type}</Badge>
+                            <td className="px-4 py-3 text-muted-foreground font-mono text-[10px]">
+                              {entry.refNo || '-'}
                             </td>
-                            <td className="px-4 py-3 text-right font-mono font-medium text-emerald-600 group-hover:bg-emerald-50/10">
-                              {entry.credit > 0 ? `+ ${entry.credit.toLocaleString()}` : '-'}
+                            <td className={cn("px-4 py-3 text-right font-mono text-[11px]", (entry.principalComponent || 0) < 0 ? "text-red-500" : "text-muted-foreground")}>
+                              {entry.principalComponent ? Number(entry.principalComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                             </td>
-                            <td className="px-4 py-3 text-right font-mono font-medium text-red-600 group-hover:bg-red-50/10">
-                              {entry.debit > 0 ? `- ${entry.debit.toLocaleString()}` : '-'}
+                            <td className="px-4 py-3 text-right font-mono text-[11px] text-red-600">
+                              {entry.interestComponent ? Number(entry.interestComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">
+                              {entry.credit > 0 ? Number(entry.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                             </td>
                             <td className="px-6 py-3 text-right font-mono font-bold text-foreground bg-muted/5">
-                              {entry.balance.toLocaleString()}
+                              {entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
                           </tr>
                         ))}
@@ -613,7 +609,11 @@ function QuickPaymentContent() {
                           {/* Row 2: Terms */}
                           <div>
                             <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Interest Rate</p>
-                            <p className="text-sm font-medium">{selectedLoan.interestRate}% {selectedLoan.interestRateUnit}</p>
+                            <p className="text-sm font-medium">
+                              {selectedLoan.interestRateUnit === 'Monthly'
+                                ? `${selectedLoan.interestRate}% Monthly (${(selectedLoan.interestRate * 12).toFixed(2)}% Yearly)`
+                                : `${selectedLoan.interestRate}% Yearly (${(selectedLoan.interestRate / 12).toFixed(2)}% Monthly)`}
+                            </p>
                           </div>
                           <div>
                             <p className="text-[10px] uppercase font-bold text-muted-foreground mb-0.5">Tenure</p>
@@ -855,15 +855,10 @@ function QuickPaymentContent() {
                               disabled={isSubmitting || (selectedLoan.status as string) === 'Closed' || (selectedLoan.status as string) === 'Rejected' || (selectedLoan.currentPrincipal ?? 1) <= 0}
                               className="h-7 px-3 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:text-red-400 dark:hover:bg-red-900/20"
                               onClick={() => {
-                                // Calculate Total Due based on LEDGER BALANCE (Most Accurate)
-                                const lastEntry = ledgerHistory.length > 0 ? ledgerHistory[ledgerHistory.length - 1] : null;
-                                // If ledger exists, use its balance. If not, fallback to schema calculation.
-                                // We iterate to find the last 'balance' entry.
-                                const ledgerBalance = lastEntry ? lastEntry.balance : (selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount);
+                                // Calculate Total Due based on Mapped State (Single Source of Truth)
+                                const totalDue = (selectedLoan.currentPrincipal || 0) + (selectedLoan.accumulatedInterest || 0) + (selectedLoan.outstandingPenalty || 0);
 
-                                const totalDue = Math.max(0, ledgerBalance);
-
-                                setPayments([{ mode: "cash", amount: totalDue.toString() }]);
+                                setPayments([{ mode: "cash", amount: Math.ceil(totalDue).toString() }]);
                                 setNarrative("Loan Preclosure / Foreclosure");
                                 setIsSplitMode(false);
                               }}
@@ -951,6 +946,7 @@ function QuickPaymentContent() {
                         loanAccountNo: selectedLoan?.loanNumber || '',
                         amount: lastPaymentData.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toString(),
                         paymentMode: lastPaymentData.map(p => p.mode.toUpperCase()).join(' + '),
+                        remainingBalance: lastPaymentMetadata?.totalBalance || 0
                       }}
                       company={companySettings}
                     />

@@ -101,7 +101,7 @@ export const MinimalStatement = ({ data, company }: StatementProps) => {
                             <div className="col-span-2 text-right font-mono">
                                 {txn.isPayment
                                     ? <span className="text-green-600">+{Number(txn.amount).toLocaleString('en-IN')}</span>
-                                    : (txn.type === 'Interest' || txn.isInterest ? <span className="text-red-400">-{Number(txn.amount).toLocaleString('en-IN')}</span> : '-')
+                                    : (txn.interestComponent ? <span className="text-red-400">-{Number(txn.interestComponent).toLocaleString('en-IN')}</span> : '-')
                                 }
                             </div>
                             <div className="col-span-2 text-right font-mono text-black font-bold">

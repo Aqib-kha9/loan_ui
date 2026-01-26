@@ -99,7 +99,6 @@ export const CorporateStatement = ({ data, company }: StatementProps) => {
                             <th className="py-2 px-2 text-left w-20">Ref No.</th>
                             <th className="py-2 px-2 text-right">Principal</th>
                             <th className="py-2 px-2 text-right">Interest</th>
-                            <th className="py-2 px-2 text-right">Penalty</th>
                             <th className="py-2 px-2 text-right">Total Paid</th>
                             <th className="py-2 px-2 text-right">Balance</th>
                         </tr>
@@ -116,10 +115,7 @@ export const CorporateStatement = ({ data, company }: StatementProps) => {
                                     {txn.principalComponent ? Number(txn.principalComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                                 </td>
                                 <td className="py-2 px-2 text-right text-slate-900">
-                                    {txn.type === 'Interest' || txn.interestComponent ? Number(txn.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : (txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-')}
-                                </td>
-                                <td className="py-2 px-2 text-right text-slate-900">
-                                    {txn.penalty ? Number(txn.penalty).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                                    {txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                                 </td>
                                 <td className="py-2 px-2 text-right text-emerald-700 font-bold">
                                     {txn.isPayment ? Number(txn.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
@@ -132,9 +128,9 @@ export const CorporateStatement = ({ data, company }: StatementProps) => {
                     </tbody>
                     <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-800">
                         <tr>
-                            <td colSpan={4} className="py-3 px-3 text-right uppercase text-xs">Totals</td>
-                            <td className="py-3 px-3 text-right text-red-600">{Number(data.totalInterest).toLocaleString('en-IN')}</td>
+                            <td colSpan={3} className="py-3 px-3 text-right uppercase text-xs">Totals</td>
                             <td className="py-3 px-3 text-right">-</td>
+                            <td className="py-3 px-3 text-right text-red-600">{Number(data.totalInterest).toLocaleString('en-IN')}</td>
                             <td className="py-3 px-3 text-right text-emerald-700">{Number(data.totalPaid).toLocaleString('en-IN')}</td>
                             <td className="py-3 px-3 text-right">{Number(data.closingBalance).toLocaleString('en-IN')}</td>
                         </tr>

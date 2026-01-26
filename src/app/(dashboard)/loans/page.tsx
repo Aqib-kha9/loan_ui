@@ -89,18 +89,15 @@ export default function LoansPage() {
         }
     }
 
-    // Progress: Paid / Total
+    // Progress: Paid / Total (Value based for accuracy)
     const calculateProgress = (loan: LoanAccount) => {
-        if (!loan.repaymentSchedule || loan.repaymentSchedule.length === 0) return 0;
-        const paidInstallments = loan.repaymentSchedule.filter((i) => i.status === 'paid').length;
-        const total = loan.repaymentSchedule.length;
-        if (total === 0) return 0;
-        return (paidInstallments / total) * 100;
+        const total = loan.totalPayable || (loan.totalLoanAmount + (loan.accumulatedInterest || 0));
+        if (!total || total === 0) return 0;
+        return ((loan.totalPaid || 0) / total) * 100;
     };
 
     const getPaidEmis = (loan: LoanAccount) => {
-        if (!loan.repaymentSchedule) return 0;
-        return loan.repaymentSchedule.filter((i) => i.status === 'paid').length;
+        return loan.emisPaid || 0;
     }
 
     // Label Helper

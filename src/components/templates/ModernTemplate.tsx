@@ -58,7 +58,13 @@ export const ModernTemplate = ({ data, company }: ReceiptProps) => {
                 </div>
                 <div>
                     <label className="block text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Receipt Reference</label>
-                    <p className="text-2xl font-mono text-slate-600">#MOD-2024-X</p>
+                    <p className="text-2xl font-mono text-slate-600">#REC-{Math.floor(Math.random() * 1000).toString().padStart(3, '0')}</p>
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-emerald-600 mb-2 uppercase tracking-wider font-extrabold">Remaining Balance</label>
+                    <p className="text-3xl font-black text-blue-900">
+                        {data.remainingBalance ? Number(data.remainingBalance).toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) : '₹0.00'}
+                    </p>
                 </div>
             </div>
 

@@ -21,6 +21,7 @@ import { mapLoanToFrontend } from "@/lib/mapper";
 import { LoanAccount } from "@/lib/mock-data";
 import { ArrowLeft, Download, IndianRupee, Calendar, User, Phone, MapPin, Receipt, Loader2, Trash2, Printer } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { PERMISSIONS } from "@/lib/constants/permissions";
 import AccessDenied from "@/components/auth/access-denied";
@@ -313,8 +314,10 @@ export default function LoanLedgerPage() {
                                         <TableRow className="bg-muted/5 hover:bg-muted/5">
                                             <TableHead className="w-[100px] text-[10px] uppercase tracking-wider font-bold h-9">Date</TableHead>
                                             <TableHead className="text-[10px] uppercase tracking-wider font-bold h-9">Particulars</TableHead>
-                                            <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9">Debit</TableHead>
-                                            <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9">Credit</TableHead>
+                                            <TableHead className="text-[10px] uppercase tracking-wider font-bold h-9">Ref No.</TableHead>
+                                            <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9">Principal</TableHead>
+                                            <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9 text-red-600">Interest</TableHead>
+                                            <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9 text-emerald-600">Total Paid</TableHead>
                                             <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9">Balance</TableHead>
                                         </TableRow>
                                     </TableHeader>
@@ -323,19 +326,22 @@ export default function LoanLedgerPage() {
                                             <TableRow key={index} className="hover:bg-muted/5 text-xs group">
                                                 <TableCell className="font-mono text-muted-foreground h-10 py-1">{new Date(entry.date).toLocaleDateString('en-GB')}</TableCell>
                                                 <TableCell className="font-medium h-10 py-1">
-                                                    <div className="flex flex-col">
-                                                        <span>{entry.particulars}</span>
-                                                        <span className="text-[9px] text-muted-foreground font-mono">{entry.refNo !== '-' ? entry.refNo : ''}</span>
-                                                    </div>
+                                                    {entry.particulars}
                                                 </TableCell>
-                                                <TableCell className="text-right h-10 py-1 text-red-600 font-mono">
-                                                    {entry.debit > 0 ? `₹${entry.debit.toLocaleString()}` : '-'}
+                                                <TableCell className="text-muted-foreground font-mono text-[10px]">
+                                                    {entry.refNo || '-'}
                                                 </TableCell>
-                                                <TableCell className="text-right h-10 py-1 text-emerald-600 font-mono">
-                                                    {entry.credit > 0 ? `₹${entry.credit.toLocaleString()}` : '-'}
+                                                <TableCell className={cn("text-right h-10 py-1 font-mono text-[11px]", (entry.principalComponent || 0) < 0 ? "text-red-500" : "text-muted-foreground")}>
+                                                    {entry.principalComponent ? Number(entry.principalComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                                                 </TableCell>
-                                                <TableCell className="text-right h-10 py-1 font-mono font-semibold">
-                                                    ₹{entry.balance.toLocaleString()}
+                                                <TableCell className="text-right h-10 py-1 font-mono text-[11px] text-red-600">
+                                                    {entry.interestComponent ? Number(entry.interestComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                                                </TableCell>
+                                                <TableCell className="text-right h-10 py-1 font-mono font-bold text-emerald-600">
+                                                    {entry.credit > 0 ? Number(entry.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                                                </TableCell>
+                                                <TableCell className="text-right h-10 py-1 font-mono font-bold">
+                                                    {entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                 </TableCell>
                                             </TableRow>
                                         ))}
@@ -379,6 +385,34 @@ export default function LoanLedgerPage() {
                                 </div>
                             </div>
                         </div>
+
+                        <div className="rounded-xl border bg-white dark:bg-zinc-900 shadow-sm p-4">
+                            <h3 className="text-sm font-semibold mb-3 border-b pb-2">Financial Details</h3>
+                            <div className="space-y-3">
+                                <div>
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold mb-0.5">Interest Rate</p>
+                                    <p className="text-sm font-semibold">
+                                        {loan.interestRateUnit === 'Monthly'
+                                            ? `${loan.interestRate}% Monthly`
+                                            : `${loan.interestRate}% Yearly`}
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground font-medium">
+                                        {loan.interestRateUnit === 'Monthly'
+                                            ? `${(loan.interestRate * 12).toFixed(2)}% Yearly`
+                                            : `${(loan.interestRate / 12).toFixed(2)}% Monthly`}
+                                    </p>
+                                </div>
+                                <Separator className="my-1" />
+                                <div>
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold mb-0.5">Scheme & Frequency</p>
+                                    <p className="text-xs font-semibold">{loan.loanScheme} • {loan.repaymentFrequency}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold mb-0.5">Sanction Date</p>
+                                    <p className="text-xs font-semibold">{new Date(loan.disbursedDate).toLocaleDateString('en-GB')}</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -398,7 +432,9 @@ export default function LoanLedgerPage() {
                             mobile: loan.mobile,
                             disbursedDate: loan.disbursedDate,
                             loanAmount: loan.totalLoanAmount,
-                            interestRate: loan.interestRate,
+                            interestRate: loan.interestRateUnit === 'Monthly'
+                                ? `${loan.interestRate}% Monthly (${(loan.interestRate * 12).toFixed(2)}% Yearly)`
+                                : `${loan.interestRate}% Yearly (${(loan.interestRate / 12).toFixed(2)}% Monthly)`,
                             tenureMonths: loan.tenureMonths,
                             emiAmount: loan.emiAmount,
                             processingFee: loan.processingFee || 0,

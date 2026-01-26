@@ -330,13 +330,19 @@ export async function POST(req: Request) {
 
         // 10. Trigger Ledger Recalculation (Date-Driven Engine)
         // This handles backdating, interest accrual, and "Balance After" correction
-        await recalculateLedger(loan.loanId);
+        const updatedState = await recalculateLedger(loan.loanId);
 
         const successMsg = remainingAmount > 0 
             ? `Collected ₹${totalAmount} (₹${remainingAmount} Excess)`
             : `Collected ₹${totalAmount}`;
 
-        return NextResponse.json({ success: true, message: successMsg, loanId: loan.loanId });
+        return NextResponse.json({ 
+            success: true, 
+            message: successMsg, 
+            loanId: loan.loanId,
+            currentPrincipal: updatedState.outstandingPrincipal,
+            accumulatedInterest: updatedState.accruedInterest
+        });
 
     } catch (error: any) {
         console.error("Payment Error:", error);

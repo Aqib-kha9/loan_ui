@@ -99,27 +99,13 @@ export default function DownloadsPage() {
                 <div ref={blankPromissoryRef}>
                     <RegionalDisbursal
                         data={{}}
-                        company={{
-                            name: companySettings?.name || "Company Name",
-                            address: companySettings?.address || "Address Line 1, City",
-                            phone: companySettings?.mobile || "9999999999",
-                            email: companySettings?.email || "email@example.com",
-                            website: "",
-                            logoUrl: companySettings?.logoUrl
-                        }}
+                        company={companySettings}
                     />
                 </div>
                 <div ref={blankVoucherRef}>
                     <RegionalTemplate
                         data={{}}
-                        company={{
-                            name: companySettings?.name || "Company Name",
-                            address: companySettings?.address || "Address Line 1, City",
-                            phone: companySettings?.mobile || "9999999999",
-                            email: companySettings?.email || "email@example.com",
-                            website: "",
-                            logoUrl: companySettings?.logoUrl
-                        }}
+                        company={companySettings}
                     />
                 </div>
             </div>

@@ -110,7 +110,6 @@ export const RegionalStatement = ({ data, company }: StatementProps) => {
                         <th className="border border-black p-2 text-left w-28">Ref No.</th>
                         <th className="border border-black p-2 text-right w-24">Principal</th>
                         <th className="border border-black p-2 text-right w-24">Interest</th>
-                        <th className="border border-black p-2 text-right w-20">Penalty</th>
                         <th className="border border-black p-2 text-right w-24">Total Paid</th>
                         <th className="border border-black p-2 text-right w-28">Balance</th>
                     </tr>
@@ -130,9 +129,6 @@ export const RegionalStatement = ({ data, company }: StatementProps) => {
                                     ? Number(txn.interestComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 })
                                     : '-'
                                 }
-                            </td>
-                            <td className="border border-black p-2 text-right">
-                                {txn.penalty ? Number(txn.penalty).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                             </td>
                             <td className="border border-black p-2 text-right font-bold">
                                 {/* Only show in Total Paid if it is a payment */}

@@ -91,7 +91,6 @@ export const ModernStatement = ({ data, company }: StatementProps) => {
                                 <th className="p-3">Ref No.</th>
                                 <th className="p-3 text-right">Principal</th>
                                 <th className="p-3 text-right">Interest</th>
-                                <th className="p-3 text-right">Penalty</th>
                                 <th className="p-3 text-right text-emerald-600">Total Paid</th>
                                 <th className="p-3 pr-6 text-right">Balance</th>
                             </tr>
@@ -108,10 +107,7 @@ export const ModernStatement = ({ data, company }: StatementProps) => {
                                         {txn.principalComponent ? Number(txn.principalComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                                     </td>
                                     <td className="p-3 text-right text-rose-600">
-                                        {txn.type === 'Interest' || txn.interestComponent ? Number(txn.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : (txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-')}
-                                    </td>
-                                    <td className="p-3 text-right text-slate-600">
-                                        {txn.penalty ? Number(txn.penalty).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                                        {txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                                     </td>
                                     <td className="p-3 text-right text-emerald-600 font-bold bg-emerald-50/30">
                                         {txn.isPayment ? Number(txn.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
@@ -124,9 +120,9 @@ export const ModernStatement = ({ data, company }: StatementProps) => {
                         </tbody>
                         <tfoot className="bg-slate-50 font-bold">
                             <tr>
-                                <td colSpan={4} className="p-3 text-right text-slate-500 uppercase text-[10px]">Totals</td>
+                                <td colSpan={3} className="p-3 text-right text-slate-500 uppercase text-[10px]">Totals</td>
+                                <td className="p-3 text-right text-slate-500 font-mono text-[10px]">-</td>
                                 <td className="p-3 text-right text-rose-600">{Number(data.totalInterest).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                <td className="p-3 text-right">-</td>
                                 <td className="p-3 text-right text-emerald-600">{Number(data.totalPaid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                                 <td className="p-3 pr-6 text-right text-slate-900">{Number(data.closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                             </tr>

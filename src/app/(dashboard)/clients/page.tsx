@@ -446,7 +446,9 @@ export default function ClientsPage() {
 
                                             <InfoItem
                                                 label="Interest Rate"
-                                                value={`${selectedClient.interestRate}% ${selectedClient.interestRateUnit || 'Yearly'}${selectedClient.interestPaidInAdvance ? ' (Adv.)' : ''}`}
+                                                value={selectedClient.interestRateUnit === 'Monthly'
+                                                    ? `${selectedClient.interestRate}% Monthly (${(selectedClient.interestRate * 12).toFixed(2)}% Yearly)${selectedClient.interestPaidInAdvance ? ' (Adv.)' : ''}`
+                                                    : `${selectedClient.interestRate}% Yearly (${(selectedClient.interestRate / 12).toFixed(2)}% Monthly)${selectedClient.interestPaidInAdvance ? ' (Adv.)' : ''}`}
                                                 className="p-4 border rounded-xl bg-card"
                                             />
 

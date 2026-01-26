@@ -225,8 +225,10 @@ export default function StatementsPage() {
         address: selectedClient.address,
         mobile: selectedClient.mobile,
         sanctionDate: selectedClient.disbursedDate,
-        loanAmount: selectedClient.totalLoanAmount.toString(),
-        interestRate: selectedClient.interestRate + "%",
+        loanAmount: selectedClient.totalLoanAmount.toLocaleString(),
+        interestRate: selectedClient.interestRateUnit === 'Monthly'
+            ? `${selectedClient.interestRate}% Monthly (${(selectedClient.interestRate * 12).toFixed(2)}% Yearly)`
+            : `${selectedClient.interestRate}% Yearly (${(selectedClient.interestRate / 12).toFixed(2)}% Monthly)`,
         interestPaidInAdvance: selectedClient.interestPaidInAdvance,
         // Pass totals (Period Sensitive)
         totalInterest: periodInterest,
@@ -523,7 +525,6 @@ export default function StatementsPage() {
                                                     <TableHead className="w-[120px] text-sm font-semibold">Ref No</TableHead>
                                                     <TableHead className="text-right w-[120px] text-sm font-semibold">Amount / Prin.</TableHead>
                                                     <TableHead className="text-right w-[100px] text-sm font-semibold">Interest</TableHead>
-                                                    <TableHead className="text-right w-[100px] text-sm font-semibold">Penalty</TableHead>
                                                     <TableHead className="w-[50px]"></TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -564,15 +565,6 @@ export default function StatementsPage() {
                                                                 type="number"
                                                                 value={entry.interestComponent}
                                                                 onChange={(e) => handleUpdateEntry(index, 'interestComponent', parseFloat(e.target.value))}
-                                                                disabled={entry.isPayment}
-                                                                className="h-10 text-sm text-right font-mono"
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell className="p-2">
-                                                            <Input
-                                                                type="number"
-                                                                value={entry.penalty}
-                                                                onChange={(e) => handleUpdateEntry(index, 'penalty', parseFloat(e.target.value))}
                                                                 disabled={entry.isPayment}
                                                                 className="h-10 text-sm text-right font-mono"
                                                             />

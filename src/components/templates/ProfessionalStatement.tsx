@@ -80,7 +80,6 @@ export const ProfessionalStatement = React.forwardRef<HTMLDivElement, StatementP
                             <th className="py-3 px-4 text-left font-semibold">Particulars</th>
                             <th className="py-3 px-4 text-right font-semibold">Principal</th>
                             <th className="py-3 px-4 text-right font-semibold">Interest</th>
-                            <th className="py-3 px-4 text-right font-semibold">Penalty</th>
                             <th className="py-3 px-4 text-right font-semibold">Total Paid</th>
                             <th className="py-3 px-4 text-right font-semibold">Balance</th>
                         </tr>
@@ -97,10 +96,7 @@ export const ProfessionalStatement = React.forwardRef<HTMLDivElement, StatementP
                                     {txn.principalComponent ? Number(txn.principalComponent).toLocaleString('en-IN') : '-'}
                                 </td>
                                 <td className="py-3 px-4 text-right text-red-600">
-                                    {txn.type === 'Interest' || txn.interestComponent ? Number(txn.amount).toLocaleString('en-IN') : (txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN') : '-')}
-                                </td>
-                                <td className="py-3 px-4 text-right text-gray-600">
-                                    {txn.penalty ? Number(txn.penalty).toLocaleString('en-IN') : '-'}
+                                    {txn.interestComponent ? Number(txn.interestComponent).toLocaleString('en-IN') : '-'}
                                 </td>
                                 <td className="py-3 px-4 text-right text-green-700">
                                     {txn.isPayment ? Number(txn.amount).toLocaleString('en-IN') : '-'}
@@ -115,7 +111,6 @@ export const ProfessionalStatement = React.forwardRef<HTMLDivElement, StatementP
                         <tr>
                             <td colSpan={3} className="py-3 px-4 text-right">Totals</td>
                             <td className="py-3 px-4 text-right text-red-600">{Number(data.totalInterest).toLocaleString('en-IN')}</td>
-                            <td className="py-3 px-4 text-right">-</td>
                             <td className="py-3 px-4 text-right text-green-700">{Number(data.totalPaid).toLocaleString('en-IN')}</td>
                             <td className="py-3 px-4 text-right">{Number(data.closingBalance).toLocaleString('en-IN')}</td>
                         </tr>

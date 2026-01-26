@@ -290,7 +290,7 @@ export default function DashboardPage() {
                 {/* Key Metrics - Compact Bento */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
                     <StatCard
-                        title="Disbursed"
+                        title="Portfolio Outstanding"
                         value={`₹${(stats.totalDisbursed / 100000).toFixed(2)} L`}
                         trend="+100%"
                         trendUp={true}
@@ -306,7 +306,7 @@ export default function DashboardPage() {
                         className="p-4 rounded-2xl"
                     />
                     <StatCard
-                        title="Collection"
+                        title="Recovery Rate"
                         value={`${stats.collectionRate}%`}
                         trend="Real-time"
                         trendUp={true}

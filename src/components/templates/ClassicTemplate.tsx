@@ -77,9 +77,9 @@ export const ClassicTemplate = ({ data, company }: ReceiptProps) => {
                 </tbody>
                 <tfoot>
                     <tr className="bg-gray-100 font-bold">
-                        <td className="border-2 border-black p-4 text-right text-xl">TOTAL RECEIVED</td>
-                        <td className="border-2 border-black p-4 text-right text-3xl">
-                            {Number(data.amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
+                        <td className="border-2 border-black p-4 text-right text-xl uppercase italic text-gray-600">Total Outstanding Balance</td>
+                        <td className="border-2 border-black p-4 text-right text-3xl text-emerald-700">
+                            {data.remainingBalance ? Number(data.remainingBalance).toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) : '₹0.00'}
                         </td>
                     </tr>
                 </tfoot>
