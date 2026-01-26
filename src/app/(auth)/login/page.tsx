@@ -145,7 +145,7 @@ export default function LoginPage() {
                     </p>
 
                     {/* Feature List (Pills) */}
-                    <div className="flex flex-wrap gap-3 pt-6">
+                    {/* <div className="flex flex-wrap gap-3 pt-6">
                         {[
                             "Portfolio Analytics",
                             "Bank-Grade Security",
@@ -155,7 +155,7 @@ export default function LoginPage() {
                                 {item}
                             </div>
                         ))}
-                    </div>
+                    </div> */}
                 </div>
 
                 {/* Footer Copyright */}
