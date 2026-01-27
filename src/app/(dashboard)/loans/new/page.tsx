@@ -142,7 +142,7 @@ export default function NewLoanPage() {
         setFormData(prev => ({
             ...prev,
             firstName: client.firstName,
-            lastName: client.lastName,
+            lastName: client.lastName || "",
             mobile: client.mobile,
             email: client.email || "",
             address: client.address || "",
@@ -151,11 +151,11 @@ export default function NewLoanPage() {
         }));
         if (client.photoUrl) setCustomerImage(client.photoUrl);
         setIsClientSelectOpen(false);
-        toast.success(`Selected customer: ${client.firstName} ${client.lastName}`);
+        toast.success(`Selected customer: ${client.firstName} ${client.lastName || ""}`.trim());
     };
 
     const filteredExistingClients = existingClients.filter(c =>
-        (c.firstName + ' ' + c.lastName).toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
+        (c.firstName + ' ' + (c.lastName || "")).toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
         c.mobile.includes(clientSearchTerm)
     );
 
@@ -540,8 +540,8 @@ export default function NewLoanPage() {
                                     <Input required placeholder="Ex. Rajesh" className="h-10 bg-muted/20" value={formData.firstName} onChange={e => handleChange("firstName", e.target.value)} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Last Name <span className="text-red-500">*</span></Label>
-                                    <Input required placeholder="Ex. Kumar" className="h-10 bg-muted/20" value={formData.lastName} onChange={e => handleChange("lastName", e.target.value)} />
+                                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Last Name</Label>
+                                    <Input placeholder="Ex. Kumar" className="h-10 bg-muted/20" value={formData.lastName} onChange={e => handleChange("lastName", e.target.value)} />
                                 </div>
 
                                 <div className="space-y-2">
@@ -717,7 +717,7 @@ export default function NewLoanPage() {
 
                                 {/* Principal Row */}
                                 <div className="sm:col-span-2 space-y-2">
-                                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Loan Principal <span className="text-red-500">*</span></Label>
+                                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Loan Principal <span className="text-[10px] normal-case font-normal text-muted-foreground">(Amount Owed by Customer)</span> <span className="text-red-500">*</span></Label>
                                     <div className="relative">
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg font-bold text-muted-foreground">₹</span>
                                         <Input
@@ -970,7 +970,7 @@ export default function NewLoanPage() {
 
                                     <div className="space-y-3 p-4 rounded-xl bg-primary-foreground/10 border border-primary-foreground/10 backdrop-blur-sm">
                                         <div className="flex justify-between text-sm">
-                                            <span className="text-primary-foreground/70">Principal</span>
+                                            <span className="text-primary-foreground/70">Principal (Book Value)</span>
                                             <span className="font-semibold">₹{parseInt(formData.loanAmount || '0').toLocaleString()}</span>
                                         </div>
                                         <div className="flex justify-between text-sm">
@@ -993,7 +993,7 @@ export default function NewLoanPage() {
 
                                         <Separator className="bg-primary-foreground/10 my-2" />
                                         <div className="flex justify-between items-center pt-1">
-                                            <span className="text-sm font-bold text-primary-foreground/90 uppercase">Net Disbursal</span>
+                                            <span className="text-sm font-bold text-primary-foreground/90 uppercase">Net Cash to Handover</span>
                                             <span className="text-xl font-bold text-primary-foreground">₹{calculations.netDisbursal.toLocaleString()}</span>
                                         </div>
                                     </div>

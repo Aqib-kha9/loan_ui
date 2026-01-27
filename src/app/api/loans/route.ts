@@ -54,7 +54,7 @@ export async function POST(req: Request) {
 
 
         // 2. Validate essential fields
-        if (!firstName || !lastName || !mobile || !loanAmount || !interestRate || !startDate) {
+        if (!firstName || !mobile || !loanAmount || !interestRate || !startDate) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
