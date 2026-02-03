@@ -213,7 +213,13 @@ export default function DashboardPage() {
 
     useEffect(() => {
         const fetchStats = async () => {
-            if (authLoading || !checkPermission(PERMISSIONS.VIEW_DASHBOARD)) return;
+            if (authLoading) return;
+
+            if (!checkPermission(PERMISSIONS.VIEW_DASHBOARD)) {
+                setStatsLoading(false);
+                return;
+            }
+
             try {
                 const res = await fetch('/api/dashboard/stats');
                 const data = await res.json();

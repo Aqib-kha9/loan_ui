@@ -32,141 +32,144 @@ export async function POST(req: Request) {
 
         // 2. Parse Input
         const body = await req.json();
-        const { loanNumber, payments, date, narrative } = body; 
+        const { loanNumber, payments, date, narrative, manualPrincipal, manualInterest } = body; 
         // payments array: [{ mode: string, amount: number }]
 
         if (!loanNumber || !payments || !Array.isArray(payments) || payments.length === 0) {
             return NextResponse.json({ error: "Invalid payment data" }, { status: 400 });
         }
 
-        // 3. Fetch Loan
+        // ... Fetch Loan and Initial Validation ...
         const loan = await Loan.findOne({ loanId: loanNumber });
-        if (!loan) {
-            return NextResponse.json({ error: "Loan not found" }, { status: 404 });
-        }
-
-        if (loan.status === 'Closed') {
-            return NextResponse.json({ error: "Loan is already Closed. No further payments accepted." }, { status: 400 });
-        }
+        if (!loan) return NextResponse.json({ error: "Loan not found" }, { status: 404 });
+        if (loan.status === 'Closed') return NextResponse.json({ error: "Loan is already Closed." }, { status: 400 });
 
         const originalNextDueDate = loan.nextPaymentDate ? new Date(loan.nextPaymentDate) : null;
-
-
-        // 4. Calculate Total Amount
         const totalAmount = payments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount) || 0), 0);
         const paymentDate = date ? new Date(date) : new Date();
 
-        if (totalAmount <= 0) {
-            return NextResponse.json({ error: "Invalid total amount" }, { status: 400 });
-        }
-
-        // Validate Date Boundaries
-        const disbursementDate = new Date(loan.disbursementDate);
-        // Reset time components for date-only comparison
-        const pDateStr = paymentDate.toISOString().split('T')[0];
-        const dDateStr = disbursementDate.toISOString().split('T')[0];
-        const todayStr = new Date().toISOString().split('T')[0];
-
-        if (pDateStr < dDateStr) {
-             return NextResponse.json({ 
-                 error: `Payment Date cannot be before Disbursement Date (${new Date(loan.disbursementDate).toLocaleDateString('en-GB')})` 
-             }, { status: 400 });
-        }
-        
-        if (pDateStr > todayStr) {
-             return NextResponse.json({ error: "Future dates are not allowed" }, { status: 400 });
-        }
+        if (totalAmount <= 0) return NextResponse.json({ error: "Invalid total amount" }, { status: 400 });
 
         // 5. Water Fall Logic (Allocate Amount)
-        // Order: Overdue Interest -> Overdue Principal -> Current Interest -> Current Principal
-        // Simplified for this schema: Pending Schedule Items (Interest -> Principal)
-        
-        // We will modify the mongoose document's array in place
-        // Note: Sort by installmentNo to ensure we pay oldest first
         loan.repaymentSchedule.sort((a: any, b: any) => a.installmentNo - b.installmentNo);
 
         let remainingAmount = totalAmount;
         let scheduleUpdated = false;
 
-        for (const item of loan.repaymentSchedule) {
-            if (remainingAmount <= 0) break;
-            if (item.status === 'paid') continue;
+        const mPrincipal = manualPrincipal ? parseFloat(manualPrincipal) : 0;
+        const mInterest = manualInterest ? parseFloat(manualInterest) : 0;
+        const isManual = (mPrincipal > 0 || mInterest > 0);
 
-            const dueAmount = item.amount - (item.paidAmount || 0);
+        if (isManual) {
+            // MANUAL OVERRIDE LOGIC
+            // First, allocate manual interest
+            let remainingMInterest = mInterest;
+            for (const item of loan.repaymentSchedule) {
+                if (remainingMInterest <= 0) break;
+                if (item.status === 'paid') continue;
+
+                const interestDue = (item.interestComponent || 0) - (item.paidInterest || 0); // Assuming paidInterest or logic below
+                // Actually, current schema only has paidAmount. We need to track how much of paidAmount is interest.
+                // For simplicity, let's assume waterfall within the item: Interest first.
+                
+                const itemInterestPaid = Math.max(0, Math.min(item.paidAmount || 0, item.interestComponent || 0));
+                const interestRemainingInItem = Math.max(0, (item.interestComponent || 0) - itemInterestPaid);
+
+                const alloc = Math.min(remainingMInterest, interestRemainingInItem);
+                item.paidAmount = (item.paidAmount || 0) + alloc;
+                remainingMInterest -= alloc;
+                scheduleUpdated = true;
+            }
+
+            // Second, allocate manual principal
+            let remainingMPrincipal = mPrincipal;
+            for (const item of loan.repaymentSchedule) {
+                if (remainingMPrincipal <= 0) break;
+                if (item.status === 'paid') continue;
+
+                const principalDue = (item.principalComponent || 0) - Math.max(0, (item.paidAmount || 0) - (item.interestComponent || 0));
+                
+                const alloc = Math.min(remainingMPrincipal, principalDue);
+                item.paidAmount = (item.paidAmount || 0) + alloc;
+                remainingMPrincipal -= alloc;
+                scheduleUpdated = true;
+            }
+
+            // Any remaining total amount (if mP + mI < totalAmount) is treated as unallocated or added to principal of last item?
+            // Actually, if user provided mP and mInterest, we should respect that.
+            // If they sum to != totalAmount, we might have a discrepancy.
+            // Let's assume totalAmount is the source of truth for the transaction record, 
+            // but mP/mI guide the schedule update.
             
-            if (dueAmount <= 0) {
-                // Should be marked paid if not already
-                if (item.status !== 'paid') {
-                  item.status = 'paid';
-                  scheduleUpdated = true;
+            // Clean up status
+            for (const item of loan.repaymentSchedule) {
+                item.balance = Math.max(0, item.amount - (item.paidAmount || 0));
+                if (item.balance <= 0) item.status = 'paid';
+                else if ((item.paidAmount || 0) > 0) item.status = 'partially_paid';
+            }
+        } else {
+            // DEFAULT WATERFALL
+            for (const item of loan.repaymentSchedule) {
+                if (remainingAmount <= 0) break;
+                if (item.status === 'paid') continue;
+
+                const dueAmount = item.amount - (item.paidAmount || 0);
+                if (dueAmount <= 0) {
+                    if (item.status !== 'paid') { item.status = 'paid'; scheduleUpdated = true; }
+                    continue;
                 }
-                continue;
+
+                const alloc = Math.min(remainingAmount, dueAmount);
+                item.paidAmount = (item.paidAmount || 0) + alloc;
+                item.balance = item.amount - item.paidAmount;
+                item.paidDate = paymentDate;
+
+                if (item.balance <= 0) {
+                    item.status = 'paid';
+                    item.balance = 0;
+                } else {
+                    item.status = 'partially_paid';
+                }
+
+                remainingAmount -= alloc;
+                scheduleUpdated = true;
             }
-
-            const alloc = Math.min(remainingAmount, dueAmount);
-            
-            item.paidAmount = (item.paidAmount || 0) + alloc;
-            item.balance = item.amount - item.paidAmount;
-            
-            // Set Paid Date to most recent payment date
-            item.paidDate = paymentDate;
-
-            if (item.balance <= 0) {
-                item.status = 'paid';
-                item.balance = 0; // Avoid negative dust
-            } else {
-                item.status = 'partially_paid';
-            }
-
-            remainingAmount -= alloc;
-            scheduleUpdated = true;
         }
 
         // 6. Record Transactions
-        // We record the FULL payment amount as a single transaction (or split by mode),
-        // regardless of how many installments were cleared.
-        // This solves the issue of "Inst #1, #2, #3..." cluttering the ledger.
-
-        // Calculate initial running balance for the transaction log based on reducing principal logic
-        // Actually, Loan Engine recalculates `balanceAfter` later. We just need to record the credit.
         let runningBalanceForTxn = loan.transactions.length > 0 
              ? loan.transactions[loan.transactions.length - 1].balanceAfter 
              : loan.loanAmount;
 
-        // Note: The loop below iterates over the PAYMENTS array (User Input), not the Schedule.
-        // If user paid ₹5000 Cash and ₹2000 UPI, we get 2 transactions. 
-        // If user paid ₹7000 Cash, we get 1 transaction.
+        const pRatio = isManual ? (mPrincipal / totalAmount) : 1; // Default to 1 if not manual? No, see logic below
+        const iRatio = isManual ? (mInterest / totalAmount) : 0;
+
         for (const p of payments) {
              const amt = parseFloat(p.amount);
              if (amt <= 0) continue;
 
-             // runningBalance logic is handled by recalculateLedger, but we provide a temp value
              runningBalanceForTxn -= amt;
 
-             // Check for Advance Payment (Paid > 5 days before due date)
              let isAdvance = false;
              if (originalNextDueDate && paymentDate < originalNextDueDate) {
                  const diffTime = Math.abs(originalNextDueDate.getTime() - paymentDate.getTime());
                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-                 if (diffDays > 5) { // 5 days buffer
-                     isAdvance = true;
-                 }
+                 if (diffDays > 5) isAdvance = true;
              }
 
              let desc = narrative ? `${narrative} (${p.mode})` : `Payment Received via ${p.mode}`;
-             if (isAdvance) {
-                 desc += " (Advance)";
-             }
+             if (isAdvance) desc += " (Advance)";
 
              loan.transactions.push({
                  txnId: `TXN-${Date.now()}-${Math.floor(Math.random()*10000)}`,
                  date: paymentDate,
                  amount: amt,
-                 type: 'EMI', 
+                 type: isManual ? 'Part Payment' : 'EMI', 
                  description: desc,
                  reference: '', 
                  paymentMode: p.mode,
-                 // Balance After is temporary here, RecalculateLedger will overwrite it with exact math
+                 principalComponent: isManual ? (amt * pRatio) : undefined,
+                 interestComponent: isManual ? (amt * iRatio) : undefined,
                  balanceAfter: Math.max(0, runningBalanceForTxn) 
              });
         }

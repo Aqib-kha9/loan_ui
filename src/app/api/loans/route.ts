@@ -99,179 +99,119 @@ export async function POST(req: Request) {
             });
         }
 
-        // 5. Server-side Calculation Validation
-        // Re-calculate to ensure data integrity
+        // 5. Unified Engine Calculation
         const P = parseFloat(loanAmount);
-        let R = parseFloat(interestRate);
-        const N = parseFloat(tenureMonths) || 0; // 0 if indefinite
+        const R = parseFloat(interestRate);
+        const N = parseFloat(tenureMonths) || 0;
         const PF_Percent = parseFloat(processingFeePercent) || 0;
-
-        // Determine Frequency Factors
-        let frequencyDivisor = 12; // Default Monthly
-        if (repaymentFrequency === 'Weekly') frequencyDivisor = 52;
-        if (repaymentFrequency === 'Daily') frequencyDivisor = 365;
-
-        let annualRate = R;        
-        if(interestRateUnit === "Monthly") annualRate = R * 12;
-
-        const periodicRate = annualRate / frequencyDivisor / 100;
-
-        // Calculate ACTUAL Number of Installments (N_effective)
-        // The input 'N' is tenure duration
         
-        // FIX: Ensure tenureUnit matches frequency if possible, or fallback safely
         let tUnit = tenureUnit || 'Months';
-        
-        // Auto-correct unit if Frequency is Daily/Weekly but Unit defaulted to Months (User likely didn't specify or UI bug)
-        // If Logic: If Daily repayment, Tenure usually in Days. If Weekly, in Weeks.
+        // Auto-correct unit if Frequency is Daily/Weekly but Unit defaulted to Months
         if (repaymentFrequency === 'Daily' && tUnit === 'Months') tUnit = 'Days';
         if (repaymentFrequency === 'Weekly' && tUnit === 'Months') tUnit = 'Weeks';
 
-        let numberOfInstallments = N; 
-        
-        if (repaymentFrequency === 'Weekly') {
-            if (tUnit === 'Months') numberOfInstallments = (N / 12) * 52;
-            else if (tUnit === 'Weeks') numberOfInstallments = N;
-            else if (tUnit === 'Days') numberOfInstallments = N / 7;
-        } else if (repaymentFrequency === 'Daily') {
-             if (tUnit === 'Months') numberOfInstallments = (N / 12) * 365;
-             else if (tUnit === 'Weeks') numberOfInstallments = N * 7;
-             else if (tUnit === 'Days') numberOfInstallments = N;
-        } else {
-            // Monthly
-             if (tUnit === 'Months') numberOfInstallments = N;
-             // ... other conversions if needed
-        }
-        numberOfInstallments = Math.ceil(numberOfInstallments);
+        const engineParams = {
+            principal: P,
+            interestRate: R,
+            interestRateUnit: interestRateUnit as any,
+            repaymentFrequency: repaymentFrequency as any,
+            tenure: N,
+            tenureUnit: tUnit as any,
+            scheme: loanScheme as any,
+            interestType: interestType as any,
+            startDate: new Date(startDate),
+            indefiniteTenure: !!indefiniteTenure,
+            interestPaidInAdvance: !!interestPaidInAdvance
+        };
 
-        let emi = 0;
+        const { UnifiedLoanEngine } = await import('@/lib/engine');
+        const schedule = UnifiedLoanEngine.getSchedule(engineParams);
+
+        // Calculate Totals from Schedule
         let totalInterest = 0;
         let totalPayable = 0;
-        let firstMonthInterest = 0; // First Period Interest
-
-        if (loanScheme === "InterestOnly") {
-             firstMonthInterest = P * periodicRate;
-             emi = firstMonthInterest;
-             
-             if(indefiniteTenure) {
-                 totalInterest = 0;
-                 totalPayable = 0;
-             } else {
-                 totalInterest = firstMonthInterest * numberOfInstallments;
-                 totalPayable = P + totalInterest;
-             }
-        } else {
-             if (interestType === "Flat") {
-                // Total Interest = P * AnnualRate * (Tenure in Years) / 100
-                // We need Tenure in Years.
-                let tenureInYears = N / 12; // Default if Months
-                if (tUnit === 'Weeks') tenureInYears = N / 52;
-                if (tUnit === 'Days') tenureInYears = N / 365;
-
-                totalInterest = (P * annualRate * tenureInYears) / 100; 
-                totalPayable = P + totalInterest;
-                emi = totalPayable / numberOfInstallments;
-             } else {
-                // Reducing
-                if (periodicRate === 0) emi = P / numberOfInstallments;
-                else emi = (P * periodicRate * Math.pow(1 + periodicRate, numberOfInstallments)) / (Math.pow(1 + periodicRate, numberOfInstallments) - 1);
-                
-                totalPayable = emi * numberOfInstallments;
-                totalInterest = totalPayable - P;
-             }
-             firstMonthInterest = P * periodicRate;
-        }
-
-        let processingFeeAmount = (P * PF_Percent) / 100;
-        let netDisbursal = P - processingFeeAmount;
-
-        if (loanScheme === "InterestOnly" && interestPaidInAdvance) {
-            // Old Logic: Deduct from Principal
-            // New Logic: Full Disbursal, Interest collected via separate Ledger Entry
-            // netDisbursal -= firstMonthInterest; 
-        }
-
-        // 6. Generate Repayment Schedule & Calculate First Installment Date
-        const { generateRepaymentSchedule } = await import('@/lib/loan-calculations');
-        const { addMonths, addWeeks, addDays } = await import('date-fns');
-
-        const disbursementDate = new Date(startDate);
-        let firstInstallmentDate = new Date(disbursementDate);
-
-        // If NOT interest paid in advance, First EMI is after 1 period
-        // If interest paid in advance, First EMI is NOW (Disbursement Date)
-        if (!interestPaidInAdvance) {
-            if (repaymentFrequency === 'Weekly') firstInstallmentDate = addWeeks(firstInstallmentDate, 1);
-            else if (repaymentFrequency === 'Daily') firstInstallmentDate = addDays(firstInstallmentDate, 1);
-            else firstInstallmentDate = addMonths(firstInstallmentDate, 1); // Default Monthly
-        }
-
-        var schedule: any[] = [];
+        let emi = 0;
         let nextPaymentDate = null;
         let nextPaymentAmount = 0;
-
-        if (!indefiniteTenure) {
-            schedule = generateRepaymentSchedule({
-                loanAmount: P,
-                interestRate: R, // Yearly
-                tenureMonths: N,
-                tenureUnit: tUnit as any,
-                loanScheme: loanScheme as any,
-                interestType: interestType as any,
-                interestRateUnit: 'Yearly',
-                repaymentFrequency: repaymentFrequency as any,
-                startDate: firstInstallmentDate, // Pass CALCULATED First EMI Date
-                disbursementDate: new Date(), // Assuming disbursement happens NOW
-                indefiniteTenure: false,
-                interestPaidInAdvance: !!interestPaidInAdvance
-            });
-
-
-            if (schedule.length > 0) {
-                nextPaymentDate = schedule[0].dueDate;
-                nextPaymentAmount = schedule[0].amount;
-            }
-        } else {
-            // Indefinite Tenure: Next payment is just next month's interest
-             if (!interestPaidInAdvance) {
-                // If standard, first interest due after 1 month
-                nextPaymentDate = addMonths(disbursementDate, 1);
-             } else {
-                nextPaymentDate = new Date(disbursementDate);
-             }
-            
-            // Calculate 1 month interest
-            const r_monthly = (R / 12) / 100;
-            nextPaymentAmount = Math.round(P * r_monthly);
-        }
-
-        // 7. Create Loan Record
-        const loanId = `LN-${Date.now().toString().slice(-6)}`; 
         
-        // Handle Advance Interest Payment Status in Schedule if Needed
-        if (interestPaidInAdvance && schedule.length > 0) {
-            // Mark first installment as paid
-            schedule[0].status = 'paid';
-            schedule[0].paidAmount = schedule[0].amount;
-            schedule[0].paidDate = new Date();
+        const disbursementDate = new Date(startDate);
+
+        if (indefiniteTenure) {
+            // Indefinite: Calculate periodic interest manually for initial record
+            const periodicInt = UnifiedLoanEngine.calculatePeriodicInterest(
+                P, 
+                R, 
+                interestRateUnit as any, 
+                repaymentFrequency as any
+            );
             
-            // Next payment becomes 2nd installment
-            if (schedule.length > 1) {
+            emi = periodicInt; // For Interest Only, EMI = Periodic Interest
+            totalInterest = 0; // Unknown
+            totalPayable = 0;  // Unknown
+            
+            // Next Payment Date logic
+            const { addMonths, addWeeks, addDays } = await import('date-fns');
+            const dDate = new Date(startDate); // Disbursement Date
+            
+             if (!interestPaidInAdvance) {
+                if (repaymentFrequency === 'Weekly') nextPaymentDate = addWeeks(dDate, 1);
+                else if (repaymentFrequency === 'Daily') nextPaymentDate = addDays(dDate, 1);
+                else nextPaymentDate = addMonths(dDate, 1);
+            } else {
+                nextPaymentDate = new Date(dDate); // Immediate if advance? Or next cycle? 
+                // Usually Advance means Date 0 is paid. So next due is Date 1.
+                 if (repaymentFrequency === 'Weekly') nextPaymentDate = addWeeks(dDate, 1);
+                else if (repaymentFrequency === 'Daily') nextPaymentDate = addDays(dDate, 1);
+                else nextPaymentDate = addMonths(dDate, 1);
+            }
+            nextPaymentAmount = periodicInt;
+
+        } else if (schedule.length > 0) {
+            // Fixed Tenure
+            totalPayable = schedule.reduce((sum, row) => sum + row.amount, 0);
+            totalInterest = schedule.reduce((sum, row) => sum + row.interestComponent, 0);
+            
+            // Estimate EMI (Take first installment amount)
+            emi = schedule[0].amount;
+
+            // Next Payment
+            // If Interest Paid In Advance, the first schedule item is the "Advance Payment" which is already done.
+            // So next due is the second item.
+            if (interestPaidInAdvance && schedule.length > 1) {
+                // Mark first as paid
+                (schedule[0] as any).status = 'paid';
+                (schedule[0] as any).paidAmount = schedule[0].amount;
+                // Next
                 nextPaymentDate = schedule[1].dueDate;
                 nextPaymentAmount = schedule[1].amount;
             } else {
-                 // Should not happen usually unless N=0, but valid for safety
-                 nextPaymentDate = null; 
-                 nextPaymentAmount = 0;
+                nextPaymentDate = schedule[0].dueDate;
+                nextPaymentAmount = schedule[0].amount;
             }
         }
 
+        // Net Disbursement
+        let firstMonthInterest = 0;
+        if (loanScheme === 'InterestOnly') {
+             firstMonthInterest = UnifiedLoanEngine.calculatePeriodicInterest(P, R, interestRateUnit as any, repaymentFrequency as any);
+        } else {
+            // For EMI, roughly estimate first interest component
+             // Or use schedule[0].interestComponent if available
+             if (schedule.length > 0) firstMonthInterest = schedule[0].interestComponent;
+        }
+
+        const processingFeeAmount = (P * PF_Percent) / 100;
+        const netDisbursal = UnifiedLoanEngine.calculateNetDisbursement(P, processingFeeAmount, !!interestPaidInAdvance, firstMonthInterest);
+
+        // 7. Create Loan Record
+        const loanId = `LN-${Date.now().toString().slice(-6)}`; 
+    
         const newLoan = await Loan.create({
             client: client._id,
             loanId,
             loanAmount: P,
             interestRate: R,
-            interestRateUnit: 'Yearly',
+            interestRateUnit: interestRateUnit || 'Yearly',
             tenureMonths: N,
             tenureUnit: tUnit,
             indefiniteTenure: !!indefiniteTenure,
@@ -292,8 +232,8 @@ export async function POST(req: Request) {
             totalPayable: Math.round(totalPayable),
             netDisbursal: Math.round(netDisbursal),
             
-            disbursementDate: disbursementDate, // User Selected
-            startDate: firstInstallmentDate,    // Calculated First EMI
+            disbursementDate: new Date(startDate), // User Selected
+            startDate: schedule.length > 0 ? schedule[0].dueDate : new Date(startDate),    
             
             // Future Tracking
             nextPaymentDate,

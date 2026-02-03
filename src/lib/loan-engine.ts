@@ -175,44 +175,67 @@ export const recalculateLedger = async (loanId: string) => {
              const txn = event.original;
              let amountLeft = txn.amount;
              
-             // Waterfall: 
-             // 1. Accrued Interest
              let interestPaid = 0;
-             if (amountLeft > 0 && currentState.accruedInterest > 0) {
-                 const alloc = Math.min(amountLeft, currentState.accruedInterest);
-                 currentState.accruedInterest -= alloc;
-                 interestPaid += alloc;
-                 currentState.totalPaidInterest += alloc;
-                 amountLeft -= alloc;
-             }
-             
-             // 2. Principal
              let principalPaid = 0;
-             // Interest Only Logic: Excess Payment does NOT reduce Principal automatically.
-             // It goes to Advance Wallet (Prepaid Interest).
-             // Unless the Transaction Type is explicitly 'Closure' or 'Part Payment'.
-             // Or if Scheme is NOT InterestOnly (i.e. EMI).
-             
-             let allowPrincipalReduction = true;
-             if (loan.loanScheme === 'InterestOnly') {
-                 // ONLY allow 'Part Payment' or 'Closure' to reduce Principal
-                 if (txn.type === 'EMI' || txn.type === 'Interest') {
-                     allowPrincipalReduction = false;
-                 }
+
+             // CHECK FOR MANUAL SPLIT OVERRIDE
+             // If the transaction already has explicit components saved, we respect them.
+             // We check if they are defined numbers (not undefined/null).
+             // NOTE: We must check 'txn' object from the event.original
+             const hasManualSplit = (typeof txn.principalComponent === 'number') && (typeof txn.interestComponent === 'number');
+
+             if (hasManualSplit) {
+                 // TRUST LEAF (Manual)
+                 interestPaid = txn.interestComponent;
+                 principalPaid = txn.principalComponent;
+                 
+                 // Deduct from Accruals/Principal
+                 currentState.accruedInterest -= interestPaid;
+                 currentState.outstandingPrincipal -= principalPaid;
+                 
+                 currentState.totalPaidInterest += interestPaid;
+                 currentState.totalPaidPrincipal += principalPaid;
+                 
+                 // Calc remain for wallet (if any mismatch, though usually exact)
+                 amountLeft = txn.amount - (interestPaid + principalPaid);
+
              } else {
-                 // For standard EMI loans, 'Interest' type transactions (like Advance Interest) should ALSO NOT reduce Principal usually.
-                 // They are strictly for Interest.
-                 if (txn.type === 'Interest') {
-                     allowPrincipalReduction = false;
+                 // RUN WATERFALL (Auto-Allocation)
+                 
+                 // 1. Accrued Interest
+                 if (amountLeft > 0 && currentState.accruedInterest > 0) {
+                     const alloc = Math.min(amountLeft, currentState.accruedInterest);
+                     currentState.accruedInterest -= alloc;
+                     interestPaid += alloc;
+                     currentState.totalPaidInterest += alloc;
+                     amountLeft -= alloc;
                  }
-             }
-             
-             if (amountLeft > 0 && allowPrincipalReduction) {
-                 const alloc = Math.min(amountLeft, currentState.outstandingPrincipal);
-                 currentState.outstandingPrincipal -= alloc;
-                 principalPaid += alloc;
-                 currentState.totalPaidPrincipal += alloc;
-                 amountLeft -= alloc;
+                 
+                 // 2. Principal
+                 let allowPrincipalReduction = true;
+                 if (loan.loanScheme === 'InterestOnly') {
+                     if (txn.type === 'EMI' || txn.type === 'Interest') {
+                         allowPrincipalReduction = false; // Only Part Payment reduces Principal
+                     }
+                 } else {
+                     if (txn.type === 'Interest') {
+                         allowPrincipalReduction = false;
+                     }
+                 }
+                 
+                 if (amountLeft > 0 && allowPrincipalReduction) {
+                     const alloc = Math.min(amountLeft, currentState.outstandingPrincipal);
+                     currentState.outstandingPrincipal -= alloc;
+                     principalPaid += alloc;
+                     currentState.totalPaidPrincipal += alloc;
+                     amountLeft -= alloc;
+                 }
+                 
+                 // Update Memory Object with Calculated Values (so it persists)
+                 if (txn) {
+                    txn.interestComponent = interestPaid;
+                    txn.principalComponent = principalPaid;
+                 }
              }
              
              // 3. Excess -> Wallet
@@ -220,11 +243,9 @@ export const recalculateLedger = async (loanId: string) => {
                  currentState.advanceWalletBalance += amountLeft;
              }
              
-             // Update Real Txn Object in DB Memory (if needed)
+             // Update Balance in Object
              if (txn) {
                  txn.balanceAfter = currentState.outstandingPrincipal;
-                 txn.interestComponent = interestPaid;
-                 txn.principalComponent = principalPaid;
              }
              
              // Virtual Ledger
@@ -236,7 +257,9 @@ export const recalculateLedger = async (loanId: string) => {
                  credit: txn.amount,
                  balance: currentState.outstandingPrincipal + currentState.accruedInterest,
                  particulars: txn.description || `Payment Received`,
-                 refNo: txn.reference
+                 refNo: txn.reference,
+                 principalComponent: principalPaid,
+                 interestComponent: interestPaid
              });
         }
     }

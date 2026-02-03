@@ -87,10 +87,29 @@ function QuickPaymentContent() {
 
   // Dynamic Payment State
   const [isSplitMode, setIsSplitMode] = useState(false);
+  const [isManualBreakup, setIsManualBreakup] = useState(false); // New dedicated state
   const [payments, setPayments] = useState([{ mode: "cash", amount: "" }]);
   const [narrative, setNarrative] = useState("");
+
+  // ... (inside render) ...
+
+
   const [contributionDate, setContributionDate] = useState(new Date().toISOString().split("T")[0]);
+  const [manualPrincipal, setManualPrincipal] = useState("");
+  const [manualInterest, setManualInterest] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Auto-update Payment Amount when Manual P/I changes (Single Mode only)
+  useEffect(() => {
+    if (isManualBreakup && payments.length === 1) {
+      const mP = parseFloat(manualPrincipal || "0");
+      const mI = parseFloat(manualInterest || "0");
+      const total = mP + mI;
+      if (total > 0) {
+        setPayments([{ ...payments[0], amount: total.toString() }]);
+      }
+    }
+  }, [manualPrincipal, manualInterest, isManualBreakup]);
 
   // Sidebar Logic
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
@@ -162,15 +181,43 @@ function QuickPaymentContent() {
 
   const selectedLoan = loans.find(l => l.loanNumber === selectedId) || null;
 
-  const handleSelectCustomer = (loan: LoanAccount) => {
+  const handleSelectCustomer = async (loan: LoanAccount) => {
     setSelectedId(loan.loanNumber);
     // Use nextPaymentAmount if available and > 0, else emiAmount. Default to emiAmount if 0 (e.g. fully paid but want to pay more?)
     // Actually if 0, default to empty? No, keep emiAmount as standard reference or 0.
     const defaultAmount = (loan.nextPaymentAmount && loan.nextPaymentAmount > 0) ? loan.nextPaymentAmount : loan.emiAmount;
     setPayments([{ mode: "cash", amount: defaultAmount.toString() }]);
     setNarrative(""); // Reset
+    setManualPrincipal(""); // Reset
+    setManualInterest(""); // Reset
+    setIsManualBreakup(false); // Reset Manual Toggle
     setActiveTab("ledger"); // Reset tab on switch
-    setLedgerHistory(generateLedger(loan));
+
+    // Fetch Unified Ledger
+    try {
+      setLedgerHistory([]); // Clear previous
+      const res = await fetch(`/api/loans/${loan.loanNumber}/statement`);
+      const data = await res.json();
+      if (data.success && data.statement) {
+        const apiLedger = data.statement.ledger.map((t: any) => ({
+          date: t.date,
+          particulars: t.particulars,
+          refNo: t.refNo || t.ref || '-',
+          debit: t.debit,
+          credit: t.credit,
+          balance: t.balance,
+          type: t.type,
+          principalComponent: t.principalComponent,
+          interestComponent: t.interestComponent,
+          isPayment: t.isPayment
+        }));
+        setLedgerHistory(apiLedger);
+      } else {
+        console.warn("Could not load unified ledger for Quick Collect.");
+      }
+    } catch (err) {
+      console.error("Failed to fetch ledger for Quick Collect", err);
+    }
   };
 
   const clearSelection = () => {
@@ -195,6 +242,8 @@ function QuickPaymentContent() {
     setPayments(newPayments);
   };
 
+
+
   // NOTE: This currently only updates local state. 
   // To persist payments, we would need to POST to an API.
   const handlePayment = async () => {
@@ -208,9 +257,23 @@ function QuickPaymentContent() {
       return;
     }
 
+    const totalCollected = validPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
     if (validPayments.length !== payments.length) {
       toast.error("Please complete all payment fields");
       return;
+    }
+
+    // MANUAL SPLIT VALIDATION
+    if (isManualBreakup) {
+      const mP = parseFloat(manualPrincipal || "0");
+      const mI = parseFloat(manualInterest || "0");
+      const tolerance = 1.0; // ₹1 tolerance for rounding
+
+      if (Math.abs((mP + mI) - totalCollected) > tolerance) {
+        toast.error(`Mismatch! P (${mP}) + I (${mI}) must equal Total (₹${totalCollected})`);
+        return;
+      }
     }
 
     try {
@@ -224,6 +287,12 @@ function QuickPaymentContent() {
           loanNumber: selectedId, // matches loanId in backend
           payments: validPayments,
           date: contributionDate,
+          // NOTE: API expects narrative, and manual splits
+          // If manual splits are provided, check if total matches amount
+          // IF user enters P=X and I=Y, we can optionally sum them to get Amount if mode amount is empty?
+          // For now, let's keep it simple: User enters Total Amount in 'payments', and optionally P/I splits for ledger.
+          manualPrincipal: manualPrincipal || undefined,
+          manualInterest: manualInterest || undefined,
           narrative: narrative
         })
       });
@@ -248,7 +317,9 @@ function QuickPaymentContent() {
       // Capture Payment Data for Receipt (before clearing form)
       setLastPaymentData([...validPayments]); // Store copy
       setLastPaymentMetadata({
-        totalBalance: data.newBalance || (data.currentPrincipal + data.accumulatedInterest) || 0
+        totalBalance: data.newBalance || (data.currentPrincipal + data.accumulatedInterest) || 0,
+        principalPaid: isManualBreakup ? manualPrincipal : undefined,
+        interestPaid: isManualBreakup ? manualInterest : undefined
       });
 
       // Reset Form
@@ -745,9 +816,9 @@ function QuickPaymentContent() {
               <div className="flex flex-col md:flex-row items-end md:items-center gap-2 w-full md:w-auto mt-2 md:mt-0">
                 {checkPermission(PERMISSIONS.CREATE_PAYMENT) ? (
                   <>
-                    {/* SPLIT TOGGLE */}
+                    {/* SPLIT TOGGLE (Payment Modes) */}
                     <div className="flex items-center gap-2 mb-2 md:mb-0">
-                      <label htmlFor="split-mode" className="text-xs font-bold text-muted-foreground cursor-pointer select-none">Split</label>
+                      <label htmlFor="split-mode" className="text-xs font-bold text-muted-foreground cursor-pointer select-none">Multi-Mode</label>
                       <Switch
                         id="split-mode"
                         checked={isSplitMode}
@@ -760,6 +831,48 @@ function QuickPaymentContent() {
                         className="scale-75"
                       />
                     </div>
+
+                    {/* MANUAL P/I TOGGLE (New) */}
+                    <div className="flex items-center gap-2 mb-2 md:mb-0">
+                      <label htmlFor="manual-breakup" className="text-xs font-bold text-muted-foreground cursor-pointer select-none">Manual P/I</label>
+                      <Switch
+                        id="manual-breakup"
+                        checked={isManualBreakup}
+                        onCheckedChange={(checked) => {
+                          setIsManualBreakup(checked);
+                          if (!checked) {
+                            setManualPrincipal("");
+                            setManualInterest("");
+                          }
+                        }}
+                        className="scale-75"
+                        data-state={isManualBreakup ? "checked" : "unchecked"}
+                      />
+                    </div>
+
+                    {/* Manual P/I Split Inputs (Conditional) */}
+                    {isManualBreakup && (
+                      <div className="flex items-center gap-2 mb-2 md:mb-0 animate-in slide-in-from-left-2 duration-300">
+                        <div className="flex items-center gap-1 bg-white/50 dark:bg-zinc-900/50 rounded-md border px-2 h-9 ring-1 ring-black/5 focus-within:ring-primary/20">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase">Prin</span>
+                          <Input
+                            placeholder="0"
+                            className="h-8 w-[80px] text-sm border-none bg-transparent p-0 focus-visible:ring-0 font-bold"
+                            value={manualPrincipal}
+                            onChange={(e) => setManualPrincipal(e.target.value)}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1 bg-white/50 dark:bg-zinc-900/50 rounded-md border px-2 h-9 ring-1 ring-black/5 focus-within:ring-primary/20">
+                          <span className="text-[10px] font-bold text-emerald-600/70 uppercase">Int</span>
+                          <Input
+                            placeholder="0"
+                            className="h-8 w-[80px] text-sm border-none bg-transparent p-0 focus-visible:ring-0 font-bold text-emerald-700"
+                            value={manualInterest}
+                            onChange={(e) => setManualInterest(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     <div className={cn(
                       "flex gap-2 bg-muted/40 p-1 pr-1.5 pl-2 rounded-md border ring-1 ring-black/5 focus-within:ring-primary/20 transition-all w-full md:w-auto",
@@ -855,8 +968,20 @@ function QuickPaymentContent() {
                               disabled={isSubmitting || (selectedLoan.status as string) === 'Closed' || (selectedLoan.status as string) === 'Rejected' || (selectedLoan.currentPrincipal ?? 1) <= 0}
                               className="h-7 px-3 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:text-red-400 dark:hover:bg-red-900/20"
                               onClick={() => {
-                                // Calculate Total Due based on Mapped State (Single Source of Truth)
-                                const totalDue = (selectedLoan.currentPrincipal || 0) + (selectedLoan.accumulatedInterest || 0) + (selectedLoan.outstandingPenalty || 0);
+                                // Calculate Total Due based on Ledger (Single Source of Truth)
+                                let totalDue = 0;
+
+                                // Prefer Ledger History (Fresh & Accurate) matches "Total to Close" display
+                                if (ledgerHistory.length > 0) {
+                                  const ledgerBalance = ledgerHistory[ledgerHistory.length - 1].balance;
+                                  totalDue = ledgerBalance;
+                                } else {
+                                  // Fallback to Loan Object (Potentially Stale)
+                                  totalDue = (selectedLoan.currentPrincipal || 0) + (selectedLoan.accumulatedInterest || 0);
+                                }
+
+                                // Add Penalty (if any) - Assuming it's not in Ledger Balance yet
+                                totalDue += (selectedLoan.outstandingPenalty || 0);
 
                                 setPayments([{ mode: "cash", amount: Math.ceil(totalDue).toString() }]);
                                 setNarrative("Loan Preclosure / Foreclosure");
@@ -946,7 +1071,9 @@ function QuickPaymentContent() {
                         loanAccountNo: selectedLoan?.loanNumber || '',
                         amount: lastPaymentData.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toString(),
                         paymentMode: lastPaymentData.map(p => p.mode.toUpperCase()).join(' + '),
-                        remainingBalance: lastPaymentMetadata?.totalBalance || 0
+                        remainingBalance: lastPaymentMetadata?.totalBalance || 0,
+                        principal: lastPaymentMetadata?.principalPaid,
+                        interest: lastPaymentMetadata?.interestPaid
                       }}
                       company={companySettings}
                     />

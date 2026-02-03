@@ -58,14 +58,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         router.refresh(); // Clear server component cache
     };
 
-    const checkPermission = (requiredPermission: PermissionValue) => {
+    const checkPermission = React.useCallback((requiredPermission: PermissionValue) => {
         if (!user) return false;
-        // Admins usually have all permissions, but our explicit list handles it. 
-        // If we want a 'wildcard' superadmin:
-        if (user.role === 'Admin') return true;
+        // Admins and Super Admins have all permissions
+        if (user.role === 'Admin' || user.role === 'super_admin') return true;
 
-        return user.permissions.includes(requiredPermission);
-    };
+        return (user.permissions || []).includes(requiredPermission);
+    }, [user]);
 
     return (
         <AuthContext.Provider value={{

@@ -62,18 +62,47 @@ export const ClassicTemplate = ({ data, company }: ReceiptProps) => {
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td className="border-2 border-black p-6 text-xl">
-                            Payment Received ({data.paymentMode})
-                            <br />
-                            <span className="text-sm italic font-normal">
-                                Received against {data.loanAccountNo}
-                            </span>
-                        </td>
-                        <td className="border-2 border-black p-6 text-right font-bold text-3xl align-top">
-                            {Number(data.amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
-                        </td>
-                    </tr>
+                    {data.principal || data.interest ? (
+                        <>
+                            <tr>
+                                <td className="border-2 border-black p-6 text-xl">
+                                    Principal Component
+                                </td>
+                                <td className="border-2 border-black p-6 text-right font-bold text-xl align-top">
+                                    {Number(data.principal || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td className="border-2 border-black p-6 text-xl">
+                                    Interest Component
+                                </td>
+                                <td className="border-2 border-black p-6 text-right font-bold text-xl align-top">
+                                    {Number(data.interest || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
+                                </td>
+                            </tr>
+                            <tr className="bg-gray-50">
+                                <td className="border-2 border-black p-6 text-xl font-bold text-right">
+                                    Total Amount Paid ({data.paymentMode})
+                                </td>
+                                <td className="border-2 border-black p-6 text-right font-bold text-2xl align-top">
+                                    {Number(data.amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
+                                </td>
+                            </tr>
+                        </>
+                    ) : (
+                        <tr>
+                            <td className="border-2 border-black p-6 text-xl">
+                                Payment Received ({data.paymentMode})
+                                <br />
+                                <span className="text-sm italic font-normal">
+                                    Received against {data.loanAccountNo}
+                                </span>
+                            </td>
+                            <td className="border-2 border-black p-6 text-right font-bold text-3xl align-top">
+                                {Number(data.amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
+                            </td>
+                        </tr>
+                    )}
                 </tbody>
                 <tfoot>
                     <tr className="bg-gray-100 font-bold">

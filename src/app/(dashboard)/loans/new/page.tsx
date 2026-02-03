@@ -276,114 +276,73 @@ export default function NewLoanPage() {
     };
 
 
-    // Calculate EMI whenever relevant fields change
+    // --- API BASED CALCULATION ---
     useEffect(() => {
-        const P = parseFloat(formData.loanAmount) || 0;
-        let R = parseFloat(formData.interestRate) || 0;
-        const N = parseFloat(formData.tenureMonths) || 0;
-        const PF_Percent = parseFloat(formData.processingFeePercent) || 0;
-
-        // Normalize Interest Rate to Yearly if user selected Monthly
-        if (formData.interestRateUnit === "Monthly") {
-            R = R * 12;
-        }
-
-        if (P > 0 && R > 0 && (N > 0 || formData.indefiniteTenure)) {
-            let emi = 0;
-            let totalInterest = 0;
-            let totalPayable = 0;
-            let firstMonthInterest = 0;
-
-            let frequencyDivisor = 12;
-            if (formData.repaymentFrequency === "Weekly") frequencyDivisor = 52;
-            if (formData.repaymentFrequency === "Daily") frequencyDivisor = 365;
-
-            // Calculate Periodic Rate
-            // r = periodic rate (e.g. weekly rate)
-            // R = Yearly Rate
-            let annualRate = R;
-            if (formData.interestRateUnit === "Monthly") annualRate = R * 12;
-
-            const periodicRate = annualRate / frequencyDivisor / 100;
-
-            // Calculate ACTUAL Number of Installments (N_effective)
-            // The input 'N' is tenure duration
-            const tUnit = formData.tenureUnit || 'Months';
-            let numberOfInstallments = N;
-
-            if (formData.repaymentFrequency === 'Weekly') {
-                if (tUnit === 'Months') numberOfInstallments = (N / 12) * 52;
-                else if (tUnit === 'Weeks') numberOfInstallments = N;
-                else if (tUnit === 'Days') numberOfInstallments = N / 7;
-            } else if (formData.repaymentFrequency === 'Daily') {
-                if (tUnit === 'Months') numberOfInstallments = (N / 12) * 365;
-                else if (tUnit === 'Weeks') numberOfInstallments = N * 7;
-                else if (tUnit === 'Days') numberOfInstallments = N;
-            } else {
-                // Monthly
-                if (tUnit === 'Months') numberOfInstallments = N;
-                else if (tUnit === 'Weeks') numberOfInstallments = N / 4.33;
-                else if (tUnit === 'Days') numberOfInstallments = N / 30;
+        const fetchCalculations = async () => {
+            // Basic validation before call
+            if (!formData.loanAmount || !formData.interestRate || (!formData.tenureMonths && !formData.indefiniteTenure)) {
+                return;
             }
 
-            numberOfInstallments = Math.ceil(numberOfInstallments); // Round up to whole installment
+            try {
+                const res = await fetch('/api/loans/calculate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        loanAmount: formData.loanAmount,
+                        interestRate: formData.interestRate,
+                        interestRateUnit: formData.interestRateUnit,
+                        tenureMonths: formData.tenureMonths,
+                        tenureUnit: formData.tenureUnit,
+                        loanScheme: formData.loanScheme,
+                        interestType: formData.interestType,
+                        repaymentFrequency: formData.repaymentFrequency,
+                        startDate: formData.startDate,
+                        indefiniteTenure: formData.indefiniteTenure,
+                        interestPaidInAdvance: formData.interestPaidInAdvance,
+                        processingFeePercent: formData.processingFeePercent
+                    })
+                });
 
-            if (formData.loanScheme === "InterestOnly") {
-                // Interest Only
-                firstMonthInterest = P * periodicRate;
-                emi = firstMonthInterest;
-
-                // If Indefinite, total interest is not calculable, set to 0
-                if (formData.indefiniteTenure) {
-                    totalInterest = 0;
-                    totalPayable = 0;
-                } else {
-                    totalInterest = firstMonthInterest * numberOfInstallments;
-                    totalPayable = P + totalInterest;
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        setCalculations({
+                            emi: data.totals.emi,
+                            totalInterest: data.totals.totalInterest,
+                            totalPayable: data.totals.totalPayable,
+                            processingFeeAmount: data.totals.processingFeeAmount,
+                            netDisbursal: data.totals.netDisbursal,
+                            firstMonthInterest: data.totals.firstMonthInterest,
+                            schedule: data.schedule
+                        });
+                    }
                 }
-
-            } else {
-                // EMI Based
-                if (formData.interestType === "Flat") {
-                    // Total Interest = P * AnnualRate * (Tenure in Years)
-                    let tenureInYears = N / 12; // Default if Months
-                    if (tUnit === 'Weeks') tenureInYears = N / 52;
-                    if (tUnit === 'Days') tenureInYears = N / 365;
-
-                    totalInterest = (P * annualRate * tenureInYears) / 100;
-                    totalPayable = P + totalInterest;
-                    emi = totalPayable / numberOfInstallments;
-                } else {
-                    // Reducing Balance
-                    if (periodicRate === 0) emi = P / numberOfInstallments;
-                    else emi = (P * periodicRate * Math.pow(1 + periodicRate, numberOfInstallments)) / (Math.pow(1 + periodicRate, numberOfInstallments) - 1);
-
-                    totalPayable = emi * numberOfInstallments;
-                    totalInterest = totalPayable - P;
-                }
-                firstMonthInterest = P * periodicRate;
+            } catch (error) {
+                console.error("Calculation Error:", error);
             }
+        };
 
-            const processingFeeAmount = (P * PF_Percent) / 100;
-            let netDisbursal = P - processingFeeAmount;
+        const timeoutId = setTimeout(() => {
+            fetchCalculations();
+        }, 500); // 500ms Debounce
 
-            // Handle Interest Paid In Advance
-            if (formData.loanScheme === "InterestOnly" && formData.interestPaidInAdvance) {
-                // netDisbursal -= firstMonthInterest; // Changed: Full Disbursal, Interest collected via separate transaction
-            }
+        return () => clearTimeout(timeoutId);
 
-            setCalculations({
-                emi: Math.round(emi),
-                totalInterest: Math.round(totalInterest),
-                totalPayable: Math.round(totalPayable),
-                processingFeeAmount: Math.round(processingFeeAmount),
-                netDisbursal: Math.round(netDisbursal),
-                firstMonthInterest: Math.round(firstMonthInterest)
-            });
-        } else {
-            setCalculations({ emi: 0, totalInterest: 0, totalPayable: 0, processingFeeAmount: 0, netDisbursal: 0, firstMonthInterest: 0 });
-        }
-    }, [formData.loanAmount, formData.interestRate, formData.tenureMonths, formData.processingFeePercent, formData.interestType, formData.interestRateUnit, formData.loanScheme, formData.interestPaidInAdvance, formData.indefiniteTenure, formData.repaymentFrequency, formData.tenureUnit]);
+    }, [
+        formData.loanAmount,
+        formData.interestRate,
+        formData.interestRateUnit,
+        formData.tenureMonths,
+        formData.tenureUnit,
+        formData.loanScheme,
+        formData.interestType,
+        formData.repaymentFrequency,
+        formData.startDate,
+        formData.indefiniteTenure,
+        formData.interestPaidInAdvance,
+        formData.processingFeePercent
+    ]);
 
     // Added: Frequency Effect to auto-set Unit
     useEffect(() => {
@@ -1094,7 +1053,7 @@ export default function NewLoanPage() {
                                                 disbursedDate: formData.startDate,
 
                                                 loanAmount: parseFloat(formData.loanAmount),
-                                                interestRate: parseFloat(formData.interestRate),
+                                                interestRate: `${parseFloat(formData.interestRate)}% / ${formData.interestRateUnit === 'Monthly' ? 'month' : 'yr'}`,
                                                 tenureMonths: parseInt(formData.tenureMonths),
                                                 emiAmount: calculations.emi,
                                                 processingFee: calculations.processingFeeAmount,

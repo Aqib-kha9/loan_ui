@@ -9,7 +9,7 @@ interface DisbursementReceiptProps {
         mobile?: string;
         disbursedDate: string;
         loanAmount: number;
-        interestRate: number;
+        interestRate: string;
         tenureMonths: number;
         emiAmount: number;
         processingFee: number;
@@ -70,7 +70,7 @@ export const ElegantDisbursal = React.forwardRef<HTMLDivElement, DisbursementRec
                         </div>
                         <div className="flex justify-between border-b border-[#f0e6d2] pb-1">
                             <span className="text-gray-500 italic">Interest Rate</span>
-                            <span>{data.interestRate}%</span>
+                            <span>{data.interestRate}</span>
                         </div>
                         <div className="flex justify-between pt-2">
                             <span className="text-[#d4af37] font-bold uppercase tracking-wider text-xs">EMI Amount</span>

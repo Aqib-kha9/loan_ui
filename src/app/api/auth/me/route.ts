@@ -1,7 +1,10 @@
+import Link from 'next/link';
+import mongoose from 'mongoose';
 import { NextResponse } from 'next/server';
 import { verifyJWT, AUTH_COOKIE_NAME } from '@/lib/auth';
 import { cookies } from 'next/headers';
 import dbConnect from '@/lib/db';
+import Role from '@/lib/models/Role'; // Ensure Role model is registered for populate
 import User from '@/lib/models/User';
 
 export async function GET(req: Request) {
@@ -20,6 +23,16 @@ export async function GET(req: Request) {
 
         // Fetch fresh data from DB to ensure user updates are reflected
         await dbConnect();
+        
+        // DEBUG: Check registered models
+        if (!mongoose.models.Role) {
+            console.log("Re-registering Role model...");
+            // Force Reference: Access the exported model to ensure file is loaded/schema registered.
+            // If the import alone was tree-shaken, using it here prevents that.
+            const _forcedRole = Role; 
+            console.log("Registered models after force:", mongoose.modelNames());
+        }
+
         const user = await User.findById(payload.id).populate('role');
         if (!user) return NextResponse.json({ error: 'User not found' }, { status: 401 });
 
@@ -38,6 +51,7 @@ export async function GET(req: Request) {
         });
 
     } catch (error: any) {
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+        console.error("Auth/Me Error:", error);
+        return NextResponse.json({ error: 'Internal Server Error', details: error.message }, { status: 500 });
     }
 }

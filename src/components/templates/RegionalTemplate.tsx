@@ -7,6 +7,7 @@ interface ReceiptProps {
     company: CompanySettings;
     mode?: 'edit' | 'print' | 'view';
     onChange?: (field: string, value: string) => void;
+    title?: string;
 }
 
 const EditableField = ({
@@ -65,7 +66,7 @@ const EditableField = ({
         </div>
     );
 };
-export const RegionalTemplate = ({ data, company, mode = 'view', onChange }: ReceiptProps) => {
+export const RegionalTemplate = ({ data, company, mode = 'view', onChange, title }: ReceiptProps) => {
 
     const handleChange = (field: string, val: string) => {
         onChange?.(field, val);
@@ -89,7 +90,7 @@ export const RegionalTemplate = ({ data, company, mode = 'view', onChange }: Rec
                     </div>
 
                     <div className="flex-1 text-center pt-4">
-                        <h1 className="text-4xl font-normal uppercase tracking-widest block">VOUCHER</h1>
+                        <h1 className="text-4xl font-normal uppercase tracking-widest block">{title || "VOUCHER"}</h1>
                     </div>
 
                     <div className="w-1/4 text-right pt-8 text-sm font-bold">

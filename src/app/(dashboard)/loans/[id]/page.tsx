@@ -59,18 +59,48 @@ export default function LoanLedgerPage() {
         `
     });
 
-    // Fetch Loan Data
+    // Fetch Loan Data & Statement
     useEffect(() => {
-        const fetchLoan = async () => {
+        const fetchLoanAndLedger = async () => {
             try {
+                // 1. Fetch Loan Details
                 const res = await fetch(`/api/loans/${id}`);
                 const data = await res.json();
 
                 if (data.success) {
                     const mappedLoan = mapLoanToFrontend(data.loan);
                     setLoan(mappedLoan);
-                    const entries = generateLedger(mappedLoan);
-                    setLedgerEntries(entries);
+
+                    // 2. Fetch Unified Statement (Ledger)
+                    // We use the loanNumber from the mapped loan to be safe, or just the ID if API supports it.
+                    // The Statement API route is /api/loans/[id]/statement. 
+                    // Let's use the ID from params which is what the loop uses.
+                    const statementRes = await fetch(`/api/loans/${id}/statement`);
+                    const statementData = await statementRes.json();
+
+                    if (statementData.success && statementData.statement) {
+                        // Map API Ledger to Frontend LedgerEntry
+                        // API Entry: { date, particulars, debit, credit, balance, ... }
+                        // Frontend expects: { date, particulars, debit, credit, balance, refNo, ... }
+                        const apiLedger = statementData.statement.ledger.map((t: any) => ({
+                            date: t.date,
+                            particulars: t.particulars,
+                            refNo: t.refNo || t.ref || '-',
+                            debit: t.debit,
+                            credit: t.credit,
+                            balance: t.balance,
+                            type: t.type,
+                            principalComponent: t.principalComponent,
+                            interestComponent: t.interestComponent,
+                            isPayment: t.isPayment
+                        }));
+                        setLedgerEntries(apiLedger);
+                    } else {
+                        // Fallback or Empty?
+                        setLedgerEntries([]);
+                        console.warn("Could not load unified ledger.");
+                    }
+
                 } else {
                     toast.error(data.error || "Failed to load loan details");
                 }
@@ -83,7 +113,7 @@ export default function LoanLedgerPage() {
         };
 
         if (id) {
-            fetchLoan();
+            fetchLoanAndLedger();
         }
     }, [id]);
 
@@ -269,7 +299,10 @@ export default function LoanLedgerPage() {
                             <IndianRupee className="h-8 w-8 text-primary" />
                         </div>
                         <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Outstanding Principal</p>
-                        <p className="text-lg font-bold mt-0.5">₹{(loan.currentPrincipal ?? loan.totalLoanAmount).toLocaleString()}</p>
+                        {/* Calculate derived principal from ledger to ensure consistency */}
+                        <p className="text-lg font-bold mt-0.5">
+                            ₹{(loan.totalLoanAmount - ledgerEntries.reduce((sum, t) => sum + (t.principalComponent || 0), 0)).toLocaleString()}
+                        </p>
                     </div>
                     <div className="p-4 rounded-xl border bg-white dark:bg-zinc-900 shadow-sm relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -284,8 +317,7 @@ export default function LoanLedgerPage() {
                         </div>
                         <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Accrued Interest</p>
                         <p className="text-lg font-bold mt-0.5 text-blue-600">
-                            ₹{(loan.accumulatedInterest || 0).toLocaleString()}
-                            {loan.lastAccrualDate && <span className="text-[10px] text-muted-foreground font-mono ml-1">(Till {new Date(loan.lastAccrualDate).getDate()}/{new Date(loan.lastAccrualDate).getMonth() + 1})</span>}
+                            ₹{totalInterest.toLocaleString()}
                         </p>
                     </div>
                     <div className="p-4 rounded-xl border bg-white dark:bg-zinc-900 shadow-sm relative overflow-hidden group">

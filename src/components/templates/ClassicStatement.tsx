@@ -10,6 +10,7 @@ interface StatementProps {
         mobile: string;
         sanctionDate: string;
         loanAmount: string;
+        netDisbursal?: string;
         interestRate: string;
         interestPaidInAdvance: boolean;
         totalInterest: number;
@@ -87,6 +88,12 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
                                     <td className="font-bold align-top">Loan Amount:</td>
                                     <td className="align-top">{Number(data.loanAmount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</td>
                                 </tr>
+                                {data.netDisbursal && (
+                                    <tr>
+                                        <td className="font-bold align-top">Net Disbursed:</td>
+                                        <td className="align-top">{Number(data.netDisbursal).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</td>
+                                    </tr>
+                                )}
                                 <tr>
                                     <td className="font-bold align-top">Interest Rate:</td>
                                     <td className="align-top">{data.interestRate}</td>

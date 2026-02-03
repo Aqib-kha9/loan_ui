@@ -48,7 +48,6 @@ import { format } from "date-fns";
 // ... imports
 import { useSettings } from "@/components/providers/settings-provider";
 import { getTemplate } from "@/components/templates/registry";
-import { generateLedger } from "@/lib/ledger-utils";
 import { useEffect } from "react";
 export default function StatementsPage() {
     const [searchTerm, setSearchTerm] = useState("");
@@ -57,7 +56,9 @@ export default function StatementsPage() {
     const [endDate, setEndDate] = useState("");
 
     const [loans, setLoans] = useState<LoanAccount[]>([]);
+
     const [isLoading, setIsLoading] = useState(true);
+    const [statementMetadata, setStatementMetadata] = useState<any>(null);
 
     // Fetch Loans
     useEffect(() => {
@@ -195,40 +196,114 @@ export default function StatementsPage() {
 
     // Initialize Ledger when client is selected
     useEffect(() => {
-        if (selectedClient) {
-            const generated = generateLedger(selectedClient);
-            // Enrich with Penalty if missing or just defaults
-            const enrich = generated.map((t, idx) => ({
-                id: idx, // stable temp id
-                ...t,
-                penalty: (t as any).penalty || 0,
-                // Ensure components exist
-                principalComponent: t.principalComponent || 0,
-                interestComponent: t.interestComponent || 0,
-                amount: t.credit > 0 ? t.credit : t.debit,
-                isPayment: t.credit > 0
-            }));
-            setLedgerEntries(enrich);
+        if (selectedClient && selectedClient.loanNumber) {
+            setIsLoading(true);
+            const fetchStatement = async () => {
+                try {
+                    // Use LoanNumber or ClientId? The API route is [id]/statement.
+                    // If we pass loanNumber (string), ensure API handles it.
+                    // My created API handles loanNumber or _id.
+
+                    // We need the ID used in the route. 
+                    // selectedClient comes from `loans` list which is mapped.
+                    // Let's use `selectedClient.loanNumber` if unique, or we need the _id.
+                    // The mapper return `loanNumber` (string e.g. LN-123).
+                    // Does it have `_id`? 
+                    // Let's check mapper. It has `clientId`. But maybe `id`?
+                    // The Frontend `LoanAccount` type has `loanNumber`. It doesn't seem to have the Loan's `_id` explicitly?
+                    // Ah, `mapLoanToFrontend` uses `backendLoan.loanId` for `loanNumber`.
+                    // The API expects `[id]` param.
+
+                    const res = await fetch(`/api/loans/${selectedClient.loanNumber}/statement`);
+                    const data = await res.json();
+
+                    if (data.success && data.statement) {
+                        setStatementMetadata(data.statement.metadata);
+                        // Enrich entries for frontend editing (add IDs if missing?)
+                        const apiLedger = data.statement.ledger.map((t: any, idx: number) => ({
+                            id: idx,
+                            ...t,
+                            amount: t.credit > 0 ? t.credit : t.debit,
+                            isPayment: t.isPayment || t.credit > 0,
+                            // Ensure components exist (api returns them)
+                            principalComponent: t.principalComponent || 0,
+                            interestComponent: t.interestComponent || 0,
+                        }));
+                        setLedgerEntries(apiLedger);
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch statement", err);
+                    toast.error("Could not load statement.");
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            fetchStatement();
         } else {
             setLedgerEntries([]);
         }
     }, [selectedClient]);
 
-    // Calculate Totals based on current 'displayEntries' state (Period Specific)
-    const periodInterest = displayEntries.reduce((sum, t) => sum + (t.type === 'Interest' ? t.debit : 0), 0);
+    // Calculate Totals based on current 'displayEntries' state (Period Sensitive)
+    // If Interest Paid in Advance is true, we need to artificially add the advance interest 
+    // to the "Total Interest Debited" because we suppressed the explicit debit row in the ledger 
+    // to maintain the 90k balance view.
+    // We can infer it from the "Payment" that has interestComponent > 0 on Disbursal Date?
+    // OR just use the flag.
+
+    const advanceInterestAddon = selectedClient?.interestPaidInAdvance ? (
+        displayEntries.find(t =>
+            // It's the advance payment if: Type=EMI, Amount > 0, InterestComp > 0, on Disbursal Date
+            (t.isPayment || t.type === 'EMI') &&
+            t.interestComponent > 0 &&
+            // Rough check: is it the first payment?
+            // Safer: Just sum up interestComponent of payments on disbursal date?
+            // Actually, simply: If we suppressed the Debit, then `periodInterest` (sum of debits) is 0.
+            // But we Paid 10k interest.
+            // So Total Debited should be at least Total Paid (for Interest).
+            // Logic: Total Interest Debited = Sum(Interest Debits) + Advance Interest Paid.
+            // But if we have normal interest debits later, they are added.
+            // The Advance Interest Paid is found in `transactions` with `interestComponent`.
+            // Let's sum up `interestComponent` of all Payments that happened on Disbursal Date?
+            // Or just sum `interestComponent` of ALL payments where corresponding Debit is missing? 
+            // Complex.
+
+            // Simple approach for this specific user scenario:
+            // Check if there is an Interest Debit on Day 0.
+            // If NOT, and there is an Interest Payment on Day 0.
+            // Add that Payment's Interest Amount to the Total Debited.
+            (selectedClient && new Date(t.date).toDateString() === new Date(selectedClient.disbursedDate).toDateString() && t.interestComponent > 0)
+        )?.interestComponent || 0
+    ) : 0;
+
+    let periodInterest = displayEntries.reduce((sum, t) => sum + (t.type === 'Interest' ? t.debit : 0), 0);
+
+    // Only add addon if we are viewing the start of the loan (disbursal date is in range)
+    // If filtering by date, we might miss it. 
+    // `displayEntries` is already filtered.
+    // If the "Advance Payment" row is visible, we should counts its implicit debit.
+    if (advanceInterestAddon > 0) {
+        // Double check we didn't already count a Debit (if logic changed)
+        const hasDebit = displayEntries.some(t => t.type === 'Interest' && selectedClient && new Date(t.date).toDateString() === new Date(selectedClient.disbursedDate).toDateString());
+        if (!hasDebit) {
+            periodInterest += advanceInterestAddon;
+        }
+    }
+
     const periodPaid = displayEntries.reduce((sum, t) => sum + t.credit, 0);
     const periodClosingBalance = displayEntries.length > 0 ? displayEntries[displayEntries.length - 1].balance : 0;
 
     const statementData = selectedClient ? {
-        customerName: selectedClient.customerName,
-        loanAccountNo: selectedClient.loanNumber,
-        address: selectedClient.address,
-        mobile: selectedClient.mobile,
-        sanctionDate: selectedClient.disbursedDate,
-        loanAmount: selectedClient.totalLoanAmount.toLocaleString(),
-        interestRate: selectedClient.interestRateUnit === 'Monthly'
-            ? `${selectedClient.interestRate}% Monthly (${(selectedClient.interestRate * 12).toFixed(2)}% Yearly)`
-            : `${selectedClient.interestRate}% Yearly (${(selectedClient.interestRate / 12).toFixed(2)}% Monthly)`,
+        customerName: statementMetadata?.customer || selectedClient.customerName,
+        loanAccountNo: statementMetadata?.loanId || selectedClient.loanNumber,
+        address: statementMetadata?.address || selectedClient.address,
+        mobile: statementMetadata?.mobile || selectedClient.mobile,
+        sanctionDate: statementMetadata?.sanctionDate ? format(new Date(statementMetadata.sanctionDate), 'yyyy-MM-dd') : selectedClient.disbursedDate,
+        loanAmount: (isNaN(Number(statementMetadata?.loanAmount ?? selectedClient.totalLoanAmount)) ? 0 : Number(statementMetadata?.loanAmount ?? selectedClient.totalLoanAmount)).toString(),
+        netDisbursal: statementMetadata?.netDisbursal ? statementMetadata.netDisbursal.toString() : undefined,
+        interestRate: statementMetadata?.interestRateDisplay || (selectedClient.interestRateUnit === 'Monthly'
+            ? `${selectedClient.interestRate}% Monthly`
+            : `${selectedClient.interestRate}% Yearly`),
         interestPaidInAdvance: selectedClient.interestPaidInAdvance,
         // Pass totals (Period Sensitive)
         totalInterest: periodInterest,

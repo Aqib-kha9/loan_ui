@@ -48,11 +48,11 @@ export default function DownloadsPage() {
 
     // --- FILL & PRINT LOGIC ---
     const [isFillDialogOpen, setIsFillDialogOpen] = React.useState(false);
-    const [activeTemplate, setActiveTemplate] = React.useState<'promissory' | 'voucher' | null>(null);
+    const [activeTemplate, setActiveTemplate] = React.useState<'promissory' | 'voucher' | 'cash_voucher' | null>(null);
 
     const [templateData, setTemplateData] = React.useState<any>({});
 
-    const openFillDialog = (type: 'promissory' | 'voucher') => {
+    const openFillDialog = (type: 'promissory' | 'voucher' | 'cash_voucher') => {
         setActiveTemplate(type);
         setTemplateData({}); // Reset
         setIsFillDialogOpen(true);
@@ -60,7 +60,7 @@ export default function DownloadsPage() {
 
     const handlePrintFilled = () => {
         if (activeTemplate === 'promissory') handlePrintPromissory();
-        if (activeTemplate === 'voucher') handlePrintVoucher();
+        if (activeTemplate === 'voucher' || activeTemplate === 'cash_voucher') handlePrintVoucher();
     };
 
     const handleInputChange = (field: string, value: string) => {
@@ -124,6 +124,30 @@ export default function DownloadsPage() {
                     </div>
                 </div>
 
+                {/* Cash Voucher Card */}
+                <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
+                    <div className="p-6">
+                        <div className="mb-4 rounded-full w-12 h-12 bg-amber-100 flex items-center justify-center text-amber-600">
+                            <FileText className="w-6 h-6" />
+                        </div>
+                        <h3 className="text-xl font-semibold leading-none tracking-tight mb-2">Cash Voucher</h3>
+                        <p className="text-sm text-muted-foreground mb-6">
+                            Specific voucher for cash disbursements with thumb impression placeholders.
+                        </p>
+                        <div className="flex gap-2">
+                            <Button onClick={() => openFillDialog('cash_voucher')} variant="default" className="flex-1 gap-2 bg-amber-600 hover:bg-amber-700 text-white">
+                                <PenLine className="w-4 h-4" /> Fill & Print
+                            </Button>
+                            <Button onClick={() => handlePrintVoucher()} variant="outline" className="gap-2 border-amber-200 hover:bg-amber-50 text-amber-700">
+                                <Printer className="w-4 h-4" /> Blank
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 pointer-events-none">
+                        <FileText className="w-32 h-32" />
+                    </div>
+                </div>
+
             </div>
 
             {/* Hidden Print Content */}
@@ -163,12 +187,13 @@ export default function DownloadsPage() {
                                     onChange={(field, val) => handleInputChange(field, val)}
                                 />
                             )}
-                            {activeTemplate === 'voucher' && (
+                            {(activeTemplate === 'voucher' || activeTemplate === 'cash_voucher') && (
                                 <RegionalTemplate
                                     data={templateData}
                                     company={companySettings}
                                     mode="edit"
                                     onChange={(field, val) => handleInputChange(field, val)}
+                                    title={activeTemplate === 'cash_voucher' ? 'CASH VOUCHER' : undefined}
                                 />
                             )}
 

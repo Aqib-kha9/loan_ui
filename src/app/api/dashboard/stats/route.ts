@@ -22,13 +22,15 @@ async function checkAccess(req: Request, requiredPermission: string) {
 export async function GET(req: Request) {
     try {
         await dbConnect();
+        
         const hasAccess = await checkAccess(req, PERMISSIONS.VIEW_DASHBOARD);
         if (!hasAccess) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
         }
 
         // 1. Basic Stats (Real-time sync with State Engine)
-        const allLoans = await Loan.find({}).populate('client');
+        // Explicitly pass Client model to avoid MissingSchemaError in dev mode
+        const allLoans = await Loan.find({}).populate({ path: 'client', model: Client });
         
         // Transform and Calculate using central logic
         const loanStates = allLoans.map(l => ({

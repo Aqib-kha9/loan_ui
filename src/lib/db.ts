@@ -29,7 +29,21 @@ async function dbConnect() {
       bufferCommands: false,
     };
 
-    cached.promise = mongoose.connect(MONGODB_URI!, opts).then((mongoose) => {
+    const tryConnect = async (retries = 3, delay = 1000): Promise<typeof mongoose> => {
+        try {
+            return await mongoose.connect(MONGODB_URI!, opts);
+        } catch (err) {
+            if (retries === 0) {
+                 console.error("MongoDB Connection Failed after retries:", err);
+                 throw err;
+            }
+            console.warn(`MongoDB Connection Error. Retrying in ${delay/1000}s... (${retries} retries left)`);
+            await new Promise(res => setTimeout(res, delay));
+            return tryConnect(retries - 1, delay);
+        }
+    };
+
+    cached.promise = tryConnect().then((mongoose) => {
       return mongoose;
     });
   }

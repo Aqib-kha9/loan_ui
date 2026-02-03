@@ -64,7 +64,7 @@ export function mapLoanToFrontend(backendLoan: any): LoanAccount {
         occupation: "",
         photoUrl: client.photoUrl || "",
         
-        totalLoanAmount: backendLoan.loanAmount,
+        totalLoanAmount: Number(backendLoan.loanAmount) || 0,
         disbursedDate: backendLoan.disbursementDate ? new Date(backendLoan.disbursementDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         emiAmount: backendLoan.calculatedEMI || 0,
         interestRate: backendLoan.interestRate,
