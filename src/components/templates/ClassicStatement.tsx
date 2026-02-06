@@ -13,6 +13,7 @@ interface StatementProps {
         netDisbursal?: string;
         interestRate: string;
         interestPaidInAdvance: boolean;
+        hideInterestRate?: boolean; // New prop
         totalInterest: number;
         totalPaid: number;
         closingBalance: number;
@@ -23,8 +24,7 @@ interface StatementProps {
 
 export const ClassicStatement = ({ data, company }: StatementProps) => {
     return (
-        <div className="w-[210mm] min-h-[297mm] bg-white text-black font-serif p-12 border mx-auto shadow-2xl flex flex-col box-border">
-            {/* Header */}
+        <div className="w-[210mm] min-h-[297mm] bg-white text-black font-serif p-12 border mx-auto shadow-2xl block box-border relative print:shadow-none print:border-0 print:m-0 print:w-full print:h-auto print:overflow-visible">
             {/* Header */}
             <div className="flex items-center justify-between border-b-2 border-black pb-6 mb-8">
                 <div className="flex-shrink-0 mr-4">
@@ -53,7 +53,7 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
             </div>
 
             {/* Customer & Account Info Box */}
-            <div className="border-2 border-black p-4 mb-8">
+            <div className="border-2 border-black p-4 mb-8 break-inside-avoid">
                 <div className="grid grid-cols-2 gap-8 text-sm">
                     <div>
                         <table className="w-full">
@@ -94,10 +94,12 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
                                         <td className="align-top">{Number(data.netDisbursal).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</td>
                                     </tr>
                                 )}
-                                <tr>
-                                    <td className="font-bold align-top">Interest Rate:</td>
-                                    <td className="align-top">{data.interestRate}</td>
-                                </tr>
+                                {!data.hideInterestRate && (
+                                    <tr>
+                                        <td className="font-bold align-top">Interest Rate:</td>
+                                        <td className="align-top">{data.interestRate}</td>
+                                    </tr>
+                                )}
                                 <tr>
                                     <td className="font-bold align-top">Int. Advance:</td>
                                     <td className="align-top">{data.interestPaidInAdvance ? 'Yes' : 'No'}</td>
@@ -109,8 +111,8 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
             </div>
 
             {/* Ledger Table */}
-            <table className="w-full border-collapse border-2 border-black text-sm mb-8">
-                <thead>
+            <table className="w-full border-collapse border-2 border-black text-sm mb-8 break-inside-auto">
+                <thead className="table-header-group">
                     <tr className="bg-gray-200">
                         <th className="border border-black p-2 text-left w-24">Date</th>
                         <th className="border border-black p-2 text-left">Particulars</th>
@@ -121,10 +123,10 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
                         <th className="border border-black p-2 text-right w-28">Balance</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-row-group">
                     {/* Transactions */}
                     {(data.transactions || []).map((txn, i) => (
-                        <tr key={i}>
+                        <tr key={i} className="break-inside-avoid page-break-inside-avoid">
                             <td className="border border-black p-2 whitespace-nowrap">{format(new Date(txn.date), "dd-MMM-yyyy")}</td>
                             <td className="border border-black p-2">{txn.particulars || (txn.type === 'Disbursal' ? 'Loan Disbursal' : txn.type)}</td>
                             <td className="border border-black p-2">{txn.refNo || '-'}</td>
@@ -153,7 +155,7 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
             </table>
 
             {/* Summary Footer */}
-            <div className="flex justify-end mb-16">
+            <div className="flex justify-end mb-16 break-inside-avoid">
                 <div className="w-1/2 border-2 border-black p-4">
                     <div className="flex justify-between mb-2">
                         <span className="font-bold">Total Interest Debited:</span>
@@ -170,7 +172,7 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
                 </div>
             </div>
 
-            <div className="mt-auto text-center text-xs space-y-2">
+            <div className="mt-8 text-center text-xs space-y-2 break-inside-avoid pb-8">
                 {company.showComputerGenerated && (
                     <p>{company.computerGeneratedText || "This is a computer generated statement and does not require a signature."}</p>
                 )}

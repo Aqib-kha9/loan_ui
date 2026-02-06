@@ -101,7 +101,9 @@ export function generateStatement(params: StatementParams): LedgerEntry[] {
     // OR we just shift the schedule.
     
     // We will SKIP the cycle on Disbursal Date for Advance Interest.
-    cycleCursor = incrementDate(cycleCursor, repaymentFrequency);
+    if(!interestPaidInAdvance) {
+        cycleCursor = incrementDate(cycleCursor, repaymentFrequency);
+    }
 
     // Generate up to Today
     while (isBefore(cycleCursor, today) || isSameDay(cycleCursor, today)) {

@@ -59,6 +59,7 @@ export default function StatementsPage() {
 
     const [isLoading, setIsLoading] = useState(true);
     const [statementMetadata, setStatementMetadata] = useState<any>(null);
+    const [hideInterestRate, setHideInterestRate] = useState(false);
 
     // Fetch Loans
     useEffect(() => {
@@ -305,6 +306,7 @@ export default function StatementsPage() {
             ? `${selectedClient.interestRate}% Monthly`
             : `${selectedClient.interestRate}% Yearly`),
         interestPaidInAdvance: selectedClient.interestPaidInAdvance,
+        hideInterestRate: hideInterestRate,
         // Pass totals (Period Sensitive)
         totalInterest: periodInterest,
         totalPaid: periodPaid,
@@ -537,6 +539,18 @@ export default function StatementsPage() {
                                         </button>
                                     )}
                                 </div>
+                                <div className="flex items-center space-x-2 ml-4">
+                                    <input
+                                        type="checkbox"
+                                        id="hideRate"
+                                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                        checked={hideInterestRate}
+                                        onChange={(e) => setHideInterestRate(e.target.checked)}
+                                    />
+                                    <label htmlFor="hideRate" className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                        Hide Rate
+                                    </label>
+                                </div>
 
                                 <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs ml-2" onClick={() => setIsEditing(true)}>
                                     <Pencil className="h-3.5 w-3.5" />
@@ -564,6 +578,7 @@ export default function StatementsPage() {
                                         <div className="overflow-hidden h-0 w-0 absolute opacity-0 pointer-events-none">
                                             <div ref={componentRef}>
                                                 <StatementComponent
+                                                    key={`print-${hideInterestRate}`}
                                                     data={statementData}
                                                     company={companySettings}
                                                 />
@@ -573,6 +588,7 @@ export default function StatementsPage() {
                                         {/* Visual Preview */}
                                         <div className="pointer-events-none select-none group-hover/paper:pointer-events-auto group-hover/paper:select-auto">
                                             <StatementComponent
+                                                key={`preview-${hideInterestRate}`}
                                                 data={statementData}
                                                 company={companySettings}
                                             />
