@@ -92,6 +92,8 @@ export default function LoanLedgerPage() {
                             type: t.type,
                             principalComponent: t.principalComponent,
                             interestComponent: t.interestComponent,
+                            principalBalance: t.principalBalance,
+                            interestBalance: t.interestBalance,
                             isPayment: t.isPayment
                         }));
                         setLedgerEntries(apiLedger);
@@ -325,7 +327,29 @@ export default function LoanLedgerPage() {
                             <User className="h-8 w-8 text-orange-600" />
                         </div>
                         <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Balance</p>
-                        <p className="text-lg font-bold mt-0.5 text-orange-600">₹{closingBalance.toLocaleString()}</p>
+                        {(() => {
+                            const lastTxn = ledgerEntries[ledgerEntries.length - 1];
+                            const interestBal = lastTxn?.interestBalance ?? 0;
+
+                            if (interestBal < 0) {
+                                return (
+                                    <div className="mt-0.5">
+                                        <p className="text-lg font-bold text-orange-600">₹{closingBalance.toLocaleString()}</p>
+                                        <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
+                                            <div className="flex justify-between">
+                                                <span>Prin:</span>
+                                                <span>₹{Number(lastTxn?.principalBalance || closingBalance).toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between text-emerald-600 font-medium">
+                                                <span>Adv. Int:</span>
+                                                <span>-₹{Number(Math.abs(interestBal)).toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            }
+                            return <p className="text-lg font-bold mt-0.5 text-orange-600">₹{closingBalance.toLocaleString()}</p>
+                        })()}
                     </div>
                 </div>
 
@@ -350,7 +374,8 @@ export default function LoanLedgerPage() {
                                             <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9">Principal</TableHead>
                                             <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9 text-red-600">Interest</TableHead>
                                             <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9 text-emerald-600">Total Paid</TableHead>
-                                            <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9">Balance</TableHead>
+                                            <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9 text-muted-foreground/70">Prin. Bal</TableHead>
+                                            <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9">Int. Due</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -370,10 +395,13 @@ export default function LoanLedgerPage() {
                                                     {entry.interestComponent ? Number(entry.interestComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                                                 </TableCell>
                                                 <TableCell className="text-right h-10 py-1 font-mono font-bold text-emerald-600">
-                                                    {entry.credit > 0 ? Number(entry.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                                                    {(entry.credit > 0 || entry.isPayment) ? Number(entry.credit || entry.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
+                                                </TableCell>
+                                                <TableCell className="text-right h-10 py-1 font-mono text-muted-foreground/70">
+                                                    {(entry.principalBalance ?? entry.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                 </TableCell>
                                                 <TableCell className="text-right h-10 py-1 font-mono font-bold">
-                                                    {entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                    {(entry.interestBalance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                 </TableCell>
                                             </TableRow>
                                         ))}

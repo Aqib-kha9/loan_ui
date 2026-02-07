@@ -15,6 +15,9 @@ export interface LedgerEntry {
     linkedType?: "txn" | "schedule" | "meta"; 
     isPayment?: boolean;
     penalty?: number;
+    amount?: number;
+    principalBalance?: number;
+    interestBalance?: number;
 }
 
 export function generateLedger(loan: any): LedgerEntry[] {

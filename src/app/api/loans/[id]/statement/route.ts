@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 import Loan from '@/lib/models/Loan';
 // Ensure Client is registered by importing it (even if not used directly, populate needs it)
 import Client from '@/lib/models/Client'; 
-import { UnifiedLoanEngine } from '@/lib/engine';
+import { recalculateLedger } from '@/lib/loan-engine';
+import { getPeriodicInterestRate } from '@/lib/shared-loan-utils';
 import { cookies } from 'next/headers';
 import { verifyJWT, AUTH_COOKIE_NAME } from '@/lib/auth';
 
@@ -43,57 +44,54 @@ export async function GET(
             return NextResponse.json({ error: "Loan not found" }, { status: 404 });
         }
 
-        // 4. Prepare Engine Params
-        const statementParams = {
-            loanAmount: Number(loan.loanAmount),
-            interestRate: Number(loan.interestRate),
-            interestRateUnit: loan.interestRateUnit as any,
-            repaymentFrequency: loan.repaymentFrequency as any,
-            disbursalDate: loan.disbursementDate || loan.createdAt,
-            interestPaidInAdvance: loan.interestPaidInAdvance,
-            loanScheme: loan.loanScheme,
-            transactions: (loan.transactions || []).map((t: any) => ({
-                id: t.txnId || t._id.toString(),
-                date: new Date(t.date),
-                amount: Number(t.amount),
-                type: t.type,
-                description: t.description,
-                reference: t.reference,
-                principalComponent: t.principalComponent,
-                interestComponent: t.interestComponent
-            }))
-        };
+        // 4. Params (Unused after migration)
+        // const statementParams = { ... };
 
-        // 5. Generate Ledger via Unified Engine
-        const ledger = UnifiedLoanEngine.getStatement(statementParams);
+        // 5. Generate Ledger via Unified Engine (Migrated to Core Loan Engine)
+        // We use 'recalculateLedger' in read-only mode (persist=false) to get the exact backend state.
+        const ledgerState = await recalculateLedger(loan.loanId, undefined, false);
+        const ledger = ledgerState.virtualTransactions.map((txn: any) => ({
+             date: txn.date,
+             particulars: txn.particulars,
+             type: txn.type,
+             debit: txn.debit,
+             credit: txn.credit,
+             balance: txn.balance,
+             refNo: txn.refNo,
+             // NEW FIELDS
+             principalComponent: txn.principalComponent,
+             interestComponent: txn.interestComponent,
+             principalBalance: txn.principalBalance,
+             interestBalance: txn.interestBalance,
+             isPayment: txn.isPayment
+        }));
 
         // Calculate Net Disbursal for display
-        const netDisbursal = UnifiedLoanEngine.calculateNetDisbursement(
-            statementParams.loanAmount,
-            loan.processingFee || 0, // Assuming processing fee field exists or 0
-            statementParams.interestPaidInAdvance,
-            // Calculate Advance Interest Amount (Simple: P * rate * 1 period)
-            // Or extract from ledger if easier?
-            // Let's use the Ledger's "Interest Debited (Advance)" if strictly needed,
-            // or the Engine's util.
-            UnifiedLoanEngine.calculatePeriodicInterest(
-                statementParams.loanAmount,
-                statementParams.interestRate,
-                statementParams.interestRateUnit,
-                statementParams.repaymentFrequency
-            )
-        );
+        // We can use the utils or just simple calc
+        // Net = LoanAmount - ProcessingFee - (PrepaidInterest ? InterestFor1stPeriod : 0)
+        
+        // Let's use logic consistent with engine
+        let firstPeriodInterest = 0;
+        if (loan.interestPaidInAdvance) {
+             const periodicRate = getPeriodicInterestRate(loan);
+             // Interest on Full Principal
+             firstPeriodInterest = Math.round(loan.loanAmount * periodicRate);
+        }
+        
+        const netDisbursal = loan.loanAmount - (loan.processingFee || 0) - (loan.interestPaidInAdvance ? firstPeriodInterest : 0);
 
         // 6. Calculate Summaries
-        const totalInterestAccrued = ledger
-            .filter(e => e.type === 'Interest')
-            .reduce((sum, e) => sum + e.debit, 0);
-
-        const totalPaid = ledger
-            .filter(e => e.isPayment)
-            .reduce((sum, e) => sum + e.credit, 0);
-
-        const closingBalance = ledger.length > 0 ? ledger[ledger.length - 1].balance : 0;
+        const totalInterestAccrued = ledgerState.accruedInterest + ledgerState.totalPaidInterest; 
+        // Note: ledgerState.accruedInterest is "Currently Outstanding Interest". 
+        // We want "Total Interest Charged So Far". 
+        // In virtualTransactions, we can sum 'debit' of type 'Interest'.
+        
+        const totalInterestDebited = ledger
+            .filter((e: any) => e.type === 'Interest')
+            .reduce((sum: number, e: any) => sum + (e.debit || 0), 0);
+            
+        const totalPaid = ledgerState.totalPaidPrincipal + ledgerState.totalPaidInterest;
+        const closingBalance = ledgerState.outstandingPrincipal + ledgerState.accruedInterest;
 
         return NextResponse.json({
             success: true,
@@ -106,14 +104,16 @@ export async function GET(
                     mobile: loan.client.mobile || '',
                     sanctionDate: loan.disbursementDate,
                     loanAmount: Number(loan.loanAmount) || 0,
-                    netDisbursal: netDisbursal, // Added
+                    netDisbursal: netDisbursal, 
                     interestRateDisplay: loan.interestRateUnit === 'Monthly' 
                         ? `${loan.interestRate}% Monthly (${(loan.interestRate * 12).toFixed(2)}% Yearly)` 
                         : `${loan.interestRate}% Yearly (${(loan.interestRate / 12).toFixed(2)}% Monthly)`
                 },
                 ledger: ledger,
                 summary: {
-                    totalInterestAccrued,
+                    totalInterest: totalInterestDebited, // Renamed for frontend compatibility
+                    totalPrincipalPaid: ledgerState.totalPaidPrincipal,
+                    totalInterestPaid: ledgerState.totalPaidInterest,
                     totalPaid,
                     closingBalance
                 }

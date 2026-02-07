@@ -98,8 +98,24 @@ function QuickPaymentContent() {
   const [manualPrincipal, setManualPrincipal] = useState("");
   const [manualInterest, setManualInterest] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dues, setDues] = useState<any>(null);
 
-  // Auto-update Payment Amount when Manual P/I changes (Single Mode only)
+  useEffect(() => {
+    if (!selectedId) return;
+    const fetchDues = async () => {
+      try {
+        const res = await fetch(`/api/loans/${selectedId}/dues?date=${contributionDate}`);
+        const data = await res.json();
+        if (data.success) {
+          setDues(data.dues);
+        }
+      } catch (error) {
+        console.error("Failed to fetch dues", error);
+      }
+    };
+    const t = setTimeout(fetchDues, 300);
+    return () => clearTimeout(t);
+  }, [selectedId, contributionDate]);
   useEffect(() => {
     if (isManualBreakup && payments.length === 1) {
       const mP = parseFloat(manualPrincipal || "0");
@@ -206,6 +222,8 @@ function QuickPaymentContent() {
           debit: t.debit,
           credit: t.credit,
           balance: t.balance,
+          principalBalance: t.principalBalance, // New
+          interestBalance: t.interestBalance,   // New
           type: t.type,
           principalComponent: t.principalComponent,
           interestComponent: t.interestComponent,
@@ -240,6 +258,27 @@ function QuickPaymentContent() {
     const newPayments = [...payments];
     newPayments[index] = { ...newPayments[index], [field]: value };
     setPayments(newPayments);
+
+    // Auto-update Manual P/I if not in Custom mode but effectively in Int/Prin Only mode
+    // We check if manual values are set (implying a mode was active)
+    // Actually, checking the *intent* is hard without an explicit 'paymentType' state. 
+    // Let's infer: If manualInterest > 0 and manualPrincipal == 0, we might be in Interest Only.
+    // BUT user might have typed that manually.
+    // Better approach: Add a new state 'paymentType' to track this explicitly?
+    // For now, let's keep it simple: The Select `onValueChange` handles the SWITCH. 
+    // But if amount changes AFTER switch? We need to update.
+
+    // Quick Fix: If we have a single row and we detect "Interest Only" pattern (mI > 0, mP=0) 
+    // or "Principal Only" (mP > 0, mI=0) AND isManualBreakup is FALSE (meaning hidden mode), update.
+
+    if (!isManualBreakup && newPayments.length === 1 && field === 'amount') {
+      const amt = parseFloat(value || "0");
+      if (manualInterest && manualPrincipal === "0") {
+        setManualInterest(amt.toString());
+      } else if (manualPrincipal && manualInterest === "0") {
+        setManualPrincipal(amt.toString());
+      }
+    }
   };
 
 
@@ -318,6 +357,8 @@ function QuickPaymentContent() {
       setLastPaymentData([...validPayments]); // Store copy
       setLastPaymentMetadata({
         totalBalance: data.newBalance || (data.currentPrincipal + data.accumulatedInterest) || 0,
+        principalBalance: data.currentPrincipal,
+        interestBalance: data.accumulatedInterest,
         principalPaid: isManualBreakup ? manualPrincipal : undefined,
         interestPaid: isManualBreakup ? manualInterest : undefined
       });
@@ -577,13 +618,19 @@ function QuickPaymentContent() {
                           <th className="px-4 py-3 border-b border-border/50 text-right">Principal</th>
                           <th className="px-4 py-3 border-b border-border/50 text-right text-red-600">Interest</th>
                           <th className="px-4 py-3 border-b border-border/50 text-right text-emerald-600">Total Paid</th>
-                          <th className="px-6 py-3 border-b border-border/50 text-right">Balance</th>
+                          <th className="px-4 py-3 border-b border-border/50 text-right text-muted-foreground/70">Prin. Bal</th>
+                          <th className="px-6 py-3 border-b border-border/50 text-right">Int. Due</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/30 bg-white dark:bg-zinc-950">
                         {ledgerHistory.map((entry, idx) => (
                           <tr key={idx} className="hover:bg-muted/5 transition-colors group">
-                            <td className="px-4 py-3 font-mono text-muted-foreground/80">{new Date(entry.date).toLocaleDateString('en-GB')}</td>
+                            <td className="px-4 py-3 font-mono text-muted-foreground/80">
+                              {(() => {
+                                const d = new Date(entry.date);
+                                return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('en-GB');
+                              })()}
+                            </td>
                             <td className="px-4 py-3">
                               <div className="font-semibold text-foreground/90 truncate max-w-[250px]">{entry.particulars}</div>
                             </td>
@@ -599,8 +646,11 @@ function QuickPaymentContent() {
                             <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">
                               {entry.credit > 0 ? Number(entry.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                             </td>
+                            <td className="px-4 py-3 text-right font-mono text-muted-foreground/70">
+                              {(entry.principalBalance ?? entry.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
                             <td className="px-6 py-3 text-right font-mono font-bold text-foreground bg-muted/5">
-                              {entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {(entry.interestBalance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
                           </tr>
                         ))}
@@ -724,22 +774,23 @@ function QuickPaymentContent() {
 
                         {/* 3. Outstanding Summary (Dynamic) */}
                         <div className="bg-red-50/50 dark:bg-red-950/10 p-4 rounded-lg border border-red-100 dark:border-red-900/30 space-y-3">
+                          {/* 1. Principal Balance */}
                           <div className="flex justify-between items-center text-sm">
-                            <span className="text-muted-foreground">Outstanding Balance</span>
+                            <span className="text-muted-foreground">Principal Balance</span>
                             <span className="font-semibold">
-                              ₹{(ledgerHistory.length > 0 ? ledgerHistory[ledgerHistory.length - 1].balance : (selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount)).toLocaleString()}
+                              ₹{(ledgerHistory.length > 0 ? (ledgerHistory[ledgerHistory.length - 1].principalBalance ?? ledgerHistory[ledgerHistory.length - 1].balance) : (selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </span>
                           </div>
 
-                          {/* Accrued Interest (Only for Reducing/Indefinite) */}
-                          {(selectedLoan.interestType === 'Reducing' || selectedLoan.indefiniteTenure) && (selectedLoan.accumulatedInterest || 0) > 0 && (
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-muted-foreground">Accrued Interest</span>
-                              <span className="font-semibold text-blue-600">+ ₹{(selectedLoan.accumulatedInterest || 0).toLocaleString()}</span>
-                            </div>
-                          )}
+                          {/* 2. Interest Due */}
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-muted-foreground">Interest Due</span>
+                            <span className="font-semibold text-red-600">
+                              + ₹{(ledgerHistory.length > 0 ? (ledgerHistory[ledgerHistory.length - 1].interestBalance ?? 0) : (selectedLoan.accumulatedInterest || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
 
-                          {/* Outstanding Penalty */}
+                          {/* 3. Penalty (Keep as is) */}
                           {(selectedLoan.outstandingPenalty || 0) > 0 && (
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-muted-foreground">Penalty</span>
@@ -750,7 +801,7 @@ function QuickPaymentContent() {
                           <div className="border-t border-red-200/50 dark:border-red-800/30 pt-2 flex justify-between items-center">
                             <span className="text-xs font-bold text-red-700 uppercase tracking-wider">Total to Close</span>
                             <span className="text-lg font-bold text-red-700">
-                              ₹{Math.max(0, ledgerHistory.length > 0 ? ledgerHistory[ledgerHistory.length - 1].balance : (selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount)).toLocaleString()}
+                              ₹{Math.max(0, ledgerHistory.length > 0 ? (ledgerHistory[ledgerHistory.length - 1].principalBalance + ledgerHistory[ledgerHistory.length - 1].interestBalance) : (selectedLoan.currentPrincipal ?? selectedLoan.totalLoanAmount)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </span>
                           </div>
                         </div>
@@ -832,25 +883,60 @@ function QuickPaymentContent() {
                       />
                     </div>
 
-                    {/* MANUAL P/I TOGGLE (New) */}
+                    {/* PAYMENT TYPE SELECTOR (New) */}
                     <div className="flex items-center gap-2 mb-2 md:mb-0">
-                      <label htmlFor="manual-breakup" className="text-xs font-bold text-muted-foreground cursor-pointer select-none">Manual P/I</label>
-                      <Switch
-                        id="manual-breakup"
-                        checked={isManualBreakup}
-                        onCheckedChange={(checked) => {
-                          setIsManualBreakup(checked);
-                          if (!checked) {
+                      <Select
+                        value={isManualBreakup ? "custom" : (manualInterest && manualPrincipal === "0" ? "interest_only" : (manualPrincipal && manualInterest === "0" ? "principal_only" : "standard"))}
+                        onValueChange={(val) => {
+                          const totalAmount = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+
+                          if (val === "standard") {
+                            setIsManualBreakup(false);
+                            setManualPrincipal("");
+                            setManualInterest("");
+                          } else if (val === "interest_only") {
+                            setIsManualBreakup(false);
+                            if (dues && dues.interestDue > 0) {
+                              const intAmt = Math.ceil(dues.interestDue);
+                              const newPayments = [...payments];
+                              newPayments[0].amount = intAmt.toString();
+                              setPayments(newPayments);
+                              setManualInterest(intAmt.toString());
+                              setManualPrincipal("0");
+                            } else if (totalAmount > 0) {
+                              setManualInterest(totalAmount.toString());
+                              setManualPrincipal("0");
+                            }
+                          } else if (val === "principal_only") {
+                            setIsManualBreakup(false);
+                            if (dues && dues.principalBalance > 0) {
+                              // Optional: Suggest full principal? Usually users pay partial.
+                              // Let's just set the mode.
+                            }
+                            if (totalAmount > 0) {
+                              setManualPrincipal(totalAmount.toString());
+                              setManualInterest("0");
+                            }
+                          } else if (val === "custom") {
+                            setIsManualBreakup(true);
                             setManualPrincipal("");
                             setManualInterest("");
                           }
                         }}
-                        className="scale-75"
-                        data-state={isManualBreakup ? "checked" : "unchecked"}
-                      />
+                      >
+                        <SelectTrigger className="h-7 w-[130px] text-xs font-bold border-none bg-muted/40 shadow-none focus:ring-0 px-2 text-foreground">
+                          <SelectValue placeholder="Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="standard">Standard (Auto)</SelectItem>
+                          <SelectItem value="interest_only">Interest Only</SelectItem>
+                          <SelectItem value="principal_only">Principal Only</SelectItem>
+                          <SelectItem value="custom">Custom Split</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
-                    {/* Manual P/I Split Inputs (Conditional) */}
+                    {/* Manual P/I Split Inputs (Conditional - Custom Only) */}
                     {isManualBreakup && (
                       <div className="flex items-center gap-2 mb-2 md:mb-0 animate-in slide-in-from-left-2 duration-300">
                         <div className="flex items-center gap-1 bg-white/50 dark:bg-zinc-900/50 rounded-md border px-2 h-9 ring-1 ring-black/5 focus-within:ring-primary/20">
@@ -968,20 +1054,21 @@ function QuickPaymentContent() {
                               disabled={isSubmitting || (selectedLoan.status as string) === 'Closed' || (selectedLoan.status as string) === 'Rejected' || (selectedLoan.currentPrincipal ?? 1) <= 0}
                               className="h-7 px-3 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:text-red-400 dark:hover:bg-red-900/20"
                               onClick={() => {
-                                // Calculate Total Due based on Ledger (Single Source of Truth)
+                                // Calculate Total Due based on API Dues (Single Source of Truth)
                                 let totalDue = 0;
 
-                                // Prefer Ledger History (Fresh & Accurate) matches "Total to Close" display
-                                if (ledgerHistory.length > 0) {
-                                  const ledgerBalance = ledgerHistory[ledgerHistory.length - 1].balance;
-                                  totalDue = ledgerBalance;
+                                if (dues) {
+                                  totalDue = dues.totalDue;
                                 } else {
-                                  // Fallback to Loan Object (Potentially Stale)
-                                  totalDue = (selectedLoan.currentPrincipal || 0) + (selectedLoan.accumulatedInterest || 0);
+                                  // Fallback (Legacy)
+                                  if (ledgerHistory.length > 0) {
+                                    const ledgerBalance = ledgerHistory[ledgerHistory.length - 1].balance;
+                                    totalDue = ledgerBalance;
+                                  } else {
+                                    totalDue = (selectedLoan.currentPrincipal || 0) + (selectedLoan.accumulatedInterest || 0);
+                                  }
+                                  totalDue += (selectedLoan.outstandingPenalty || 0);
                                 }
-
-                                // Add Penalty (if any) - Assuming it's not in Ledger Balance yet
-                                totalDue += (selectedLoan.outstandingPenalty || 0);
 
                                 setPayments([{ mode: "cash", amount: Math.ceil(totalDue).toString() }]);
                                 setNarrative("Loan Preclosure / Foreclosure");
@@ -990,6 +1077,26 @@ function QuickPaymentContent() {
                             >
                               {isSubmitting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Preclose"}
                             </Button>
+
+                            {/* Dues Breakdown Hint */}
+                            {dues && (
+                              <div className="absolute -top-6 right-0 text-[10px] text-muted-foreground hidden md:block text-right">
+                                <span className="font-bold text-foreground">Total Due: ₹{Math.ceil(dues.totalDue).toLocaleString()}</span>
+                                <span className="mx-1 opacity-50">|</span>
+                                {dues.interestDue < 0 ? (
+                                  <span className="text-emerald-600 font-medium">
+                                    Prin: ₹{Math.ceil(dues.principalBalance).toLocaleString()} - Adv. Int: ₹{Math.abs(Math.ceil(dues.interestDue)).toLocaleString()}
+                                  </span>
+                                ) : (
+                                  <>
+                                    Int: ₹{Math.ceil(dues.interestDue).toLocaleString()}
+                                    <span className="mx-1 opacity-50">|</span>
+                                    Prin: ₹{Math.ceil(dues.principalBalance).toLocaleString()}
+                                  </>
+                                )}
+                                {dues.proRataInterest > 0 && <span className="ml-1 text-xs text-amber-600">(+{Math.ceil(dues.proRataInterest)} Pro-Rata)</span>}
+                              </div>
+                            )}
 
                             <Button
                               size="sm"
@@ -1072,6 +1179,8 @@ function QuickPaymentContent() {
                         amount: lastPaymentData.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toString(),
                         paymentMode: lastPaymentData.map(p => p.mode.toUpperCase()).join(' + '),
                         remainingBalance: lastPaymentMetadata?.totalBalance || 0,
+                        principalBalance: lastPaymentMetadata?.principalBalance,
+                        interestBalance: lastPaymentMetadata?.interestBalance,
                         principal: lastPaymentMetadata?.principalPaid,
                         interest: lastPaymentMetadata?.interestPaid
                       }}

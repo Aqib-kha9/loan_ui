@@ -13,7 +13,7 @@ import {
     ChevronRight,
     Home,
     Pencil,
-    Trash2
+    Trash2,User
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -229,6 +229,8 @@ export default function StatementsPage() {
                             // Ensure components exist (api returns them)
                             principalComponent: t.principalComponent || 0,
                             interestComponent: t.interestComponent || 0,
+                            principalBalance: t.principalBalance,
+                            interestBalance: t.interestBalance
                         }));
                         setLedgerEntries(apiLedger);
                     }
@@ -291,7 +293,11 @@ export default function StatementsPage() {
         }
     }
 
-    const periodPaid = displayEntries.reduce((sum, t) => sum + t.credit, 0);
+    // Filter out internal Wallet Adjustments (like Interest Paid in Advance) from "Paid" totals
+    const periodPaid = displayEntries.reduce((sum, t) => sum + (t.type === 'Wallet Adjustment' ? 0 : t.credit), 0);
+    const periodPrincipalPaid = displayEntries.reduce((sum, t) => sum + (t.isPayment && t.type !== 'Wallet Adjustment' ? (t.principalComponent || 0) : 0), 0);
+    const periodInterestPaid = displayEntries.reduce((sum, t) => sum + (t.isPayment && t.type !== 'Wallet Adjustment' ? (t.interestComponent || 0) : 0), 0);
+
     const periodClosingBalance = displayEntries.length > 0 ? displayEntries[displayEntries.length - 1].balance : 0;
 
     const statementData = selectedClient ? {
@@ -310,13 +316,17 @@ export default function StatementsPage() {
         // Pass totals (Period Sensitive)
         totalInterest: periodInterest,
         totalPaid: periodPaid,
+        totalPrincipalPaid: periodPrincipalPaid,
+        totalInterestPaid: periodInterestPaid,
         closingBalance: periodClosingBalance,
         transactions: displayEntries.map(t => ({
             ...t,
             amount: t.credit > 0 ? t.credit : t.debit,
             isPayment: t.credit > 0,
             ref: t.refNo, // For legacy template compat
-            balanceAfter: t.balance
+            balanceAfter: t.balance,
+            principalBalance: t.principalBalance,
+            interestBalance: t.interestBalance
         }))
     } : null;
 
@@ -702,6 +712,41 @@ export default function StatementsPage() {
                             <FileText className="h-10 w-10 text-muted-foreground/40" />
                         </div>
                         <h3 className="text-xl font-bold tracking-tight text-foreground">Select a Customer</h3>
+                        <div className="p-4 rounded-xl border bg-white dark:bg-zinc-900 shadow-sm relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <User className="h-8 w-8 text-orange-600" />
+                            </div>
+                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Closing Balance</p>
+                            {(() => {
+                                // Check if we have an Advance Interest scenario
+                                const lastTxn = displayEntries[displayEntries.length - 1];
+                                const interestBal = lastTxn?.interestBalance ?? 0;
+
+                                if (interestBal < 0) {
+                                    return (
+                                        <div className="mt-0.5">
+                                            <p className="text-lg font-bold text-orange-600">
+                                                ₹{periodClosingBalance.toLocaleString()}
+                                            </p>
+                                            <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
+                                                <div className="flex justify-between">
+                                                    <span>Prin:</span>
+                                                    <span>₹{Number(lastTxn?.principalBalance || periodClosingBalance).toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex justify-between text-emerald-600 font-medium">
+                                                    <span>Adv. Int:</span>
+                                                    <span>-₹{Number(Math.abs(interestBal)).toLocaleString()}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                }
+
+                                return (
+                                    <p className="text-lg font-bold mt-0.5 text-orange-600">₹{periodClosingBalance.toLocaleString()}</p>
+                                )
+                            })()}
+                        </div>
                         <p className="max-w-xs mt-2 text-sm text-muted-foreground leading-relaxed">
                             Choose a customer from the list to generate, customize, and print their transaction statement.
                         </p>

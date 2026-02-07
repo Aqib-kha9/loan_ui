@@ -26,13 +26,19 @@ interface LedgerState {
     
     // New: Virtual Ledger for Statement
     virtualTransactions: any[]; 
+    
+    // New: Last Date Interest was Accrued (for Pro-Rata)
+    lastInterestAccrualDate?: Date;
 }
 
-export const recalculateLedger = async (loanId: string) => {
+export const recalculateLedger = async (loanId: string, toDate?: Date, persist: boolean = true) => {
     const loan = await Loan.findOne({ loanId }).sort({ 'transactions.date': 1 }); 
     if (!loan) throw new Error("Loan not found");
 
-    const transactions = loan.transactions.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const transactions = (loan.transactions || [])
+        .map((t: any) => t.toObject ? t.toObject() : t)
+        .map((t: any) => ({ ...t, date: new Date(t.date) }))
+        .sort((a: any, b: any) => a.date.getTime() - b.date.getTime());
 
     let currentState: LedgerState = {
         date: new Date(loan.disbursementDate),
@@ -42,7 +48,8 @@ export const recalculateLedger = async (loanId: string) => {
         totalPaidInterest: 0,
         totalPaidPrincipal: 0,
         status: 'Active',
-        virtualTransactions: []
+        virtualTransactions: [],
+        lastInterestAccrualDate: new Date(loan.disbursementDate) // Default anchor
     };
     
     // Disbursement Entry
@@ -60,10 +67,10 @@ export const recalculateLedger = async (loanId: string) => {
     // Timeline Construction
     // Events: 1. Cycle Dates (Interest Application) 2. Payments (Transactions)
     
-    // Generate All Cycle Dates from Disbursal to Today
+    // Generate All Cycle Dates from Disbursal to toDate (or Today)
     let cycleDates: Date[] = [];
     let cycleCursor = new Date(loan.disbursementDate);
-    const today = new Date();
+    const targetDate = toDate ? new Date(toDate) : new Date();
     
     // Logic: 
     // Standard (Post-Paid): Interest accrues at END of period. (M1, M2...)
@@ -71,7 +78,7 @@ export const recalculateLedger = async (loanId: string) => {
     
     if (loan.interestPaidInAdvance) {
         // Accrue immediately on Day 0
-        if (isBefore(cycleCursor, today) || isSameDay(cycleCursor, today)) {
+        if (isBefore(cycleCursor, targetDate) || isSameDay(cycleCursor, targetDate)) {
              cycleDates.push(new Date(cycleCursor));
         }
     }
@@ -83,8 +90,8 @@ export const recalculateLedger = async (loanId: string) => {
         else if (loan.repaymentFrequency === 'Weekly') cycleCursor = addWeeks(cycleCursor, 1);
         else cycleCursor = addDays(cycleCursor, 1);
         
-        // Break if future
-        if (isAfter(cycleCursor, today)) break;
+        // Break if future (beyond targetDate)
+        if (isAfter(cycleCursor, targetDate)) break;
         
         // Add to list
         cycleDates.push(new Date(cycleCursor));
@@ -106,26 +113,25 @@ export const recalculateLedger = async (loanId: string) => {
     });
 
     for (const event of allEvents) {
+        // Ignore transactions after targetDate
+        if (isAfter(new Date(event.date), targetDate)) continue;
+
         // A. Interest Cycle Event
         if (event.type === 'CYCLE_INTEREST') {
-            // Calculate Interest on Current Principal
-            let principalBasis = currentState.outstandingPrincipal;
-            
-            // Interest Only handling? Same formula P * R.
-            // Reducing? Same formula P * R.
-            // Flat? Fixed Amount (P_Original * Limit / N). 
-            // BUT here we are Reconciling Active Ledger, assume 'reducing' style logic usually for tracking.
-            // If strictly 'Flat', the Interest is fixed per schedule. 
-            // User script: "Interest Only / Reducing".
-            
+            // Update Last Accrual Date
+            currentState.lastInterestAccrualDate = new Date(event.date);
+
+            // Calculate Interest
             let interestAmount = 0;
             
             if (loan.interestType === 'Flat') {
-                 // Fallback for Flat: Use schedule? Or constant?
-                 // Let's assume reducing logic for user correctness request "1.25% Monthly" on "Outstanding".
-                 interestAmount = principalBasis * periodicRate;
+                 // Flat Rate: Interest on Original Principal
+                 // Configuration: "1% Monthly Flat" -> 50000 * 1% = 500 always.
+                 interestAmount = loan.loanAmount * periodicRate;
             } else {
-                 interestAmount = principalBasis * periodicRate;
+                 // Reducing Balance: Interest on Outstanding Principal
+                 // Configuration: "1% Monthly Reducing" -> Outstanding * 1%
+                 interestAmount = currentState.outstandingPrincipal * periodicRate;
             }
             
             interestAmount = Math.round(interestAmount);
@@ -152,7 +158,13 @@ export const recalculateLedger = async (loanId: string) => {
                             debit: 0,
                             credit: offset,
                             balance: currentState.outstandingPrincipal + currentState.accruedInterest, 
-                            particulars: `Paid from Advance Wallet`
+                            particulars: `Paid from Advance Wallet`,
+                            // NEW FIELDS
+                            principalComponent: 0,
+                            interestComponent: offset,
+                            principalBalance: currentState.outstandingPrincipal,
+                            interestBalance: currentState.accruedInterest,
+                            isPayment: true // It is a payment (Internal Transfer)
                         });
                     }
                 }
@@ -166,7 +178,13 @@ export const recalculateLedger = async (loanId: string) => {
                     // Balance View: Principal + Accrued? Or just Principal? 
                     // Usually Ledger shows Outstanding (P + I).
                     balance: currentState.outstandingPrincipal + currentState.accruedInterest, 
-                    particulars: `Interest Accrued`
+                    particulars: `Interest Accrued`,
+                    // NEW FIELDS for UI Transparency
+                    principalComponent: 0,
+                    interestComponent: interestAmount,
+                    principalBalance: currentState.outstandingPrincipal,
+                    interestBalance: currentState.accruedInterest,
+                    isPayment: false
                 });
             }
         } 
@@ -201,6 +219,23 @@ export const recalculateLedger = async (loanId: string) => {
 
              } else {
                  // RUN WATERFALL (Auto-Allocation)
+
+                 // 0. Advance Interest Settlement
+                 // If we have negative accrued interest (Advance), and we still have outstanding principal,
+                 // we "settle" them against each other to bring balances closer to zero.
+                 if (currentState.accruedInterest < 0 && currentState.outstandingPrincipal > 0) {
+                     const settlementSize = Math.min(Math.abs(currentState.accruedInterest), currentState.outstandingPrincipal);
+                     
+                     // Move credit from Interest to Principal
+                     currentState.outstandingPrincipal -= settlementSize;
+                     currentState.accruedInterest += settlementSize;
+                     
+                     // Reflect in this transaction's components
+                     // This ensures that: Cash Paid = Principal Paid + Interest Paid
+                     // (e.g. 79,200 Cash = 89,500 Principal + -10,300 Interest)
+                     principalPaid += settlementSize;
+                     interestPaid -= settlementSize;
+                 }
                  
                  // 1. Accrued Interest
                  if (amountLeft > 0 && currentState.accruedInterest > 0) {
@@ -214,9 +249,10 @@ export const recalculateLedger = async (loanId: string) => {
                  // 2. Principal
                  let allowPrincipalReduction = true;
                  if (loan.loanScheme === 'InterestOnly') {
-                     if (txn.type === 'EMI' || txn.type === 'Interest') {
-                         allowPrincipalReduction = false; // Only Part Payment reduces Principal
+                     if (txn.type === 'Interest') {
+                         allowPrincipalReduction = false; 
                      }
+                     // Allow 'EMI' type to reduce principal if interest is covered (effectively a Part Payment)
                  } else {
                      if (txn.type === 'Interest') {
                          allowPrincipalReduction = false;
@@ -250,16 +286,19 @@ export const recalculateLedger = async (loanId: string) => {
              
              // Virtual Ledger
              currentState.virtualTransactions.push({
-                 date: event.date,
-                 type: 'Payment',
-                 originalType: txn.type,
+                 date: txn.date,
+                 type: txn.type,
                  debit: 0,
                  credit: txn.amount,
                  balance: currentState.outstandingPrincipal + currentState.accruedInterest,
                  particulars: txn.description || `Payment Received`,
                  refNo: txn.reference,
+                 // NEW FIELDS for UI Transparency
                  principalComponent: principalPaid,
-                 interestComponent: interestPaid
+                 interestComponent: interestPaid,
+                 principalBalance: currentState.outstandingPrincipal,
+                 interestBalance: currentState.accruedInterest,
+                 isPayment: true
              });
         }
     }
@@ -271,31 +310,20 @@ export const recalculateLedger = async (loanId: string) => {
         currentState.status = 'Active';
     }
 
-    // Save Changes
-    loan.accumulatedInterest = currentState.accruedInterest;
-    loan.currentPrincipal = currentState.outstandingPrincipal;
-    if (loan.status !== 'written_off') loan.status = currentState.status;
+    // Save Changes (only if persist is true)
+    if (persist) {
+        loan.accumulatedInterest = currentState.accruedInterest;
+        loan.currentPrincipal = currentState.outstandingPrincipal;
+        if (loan.status !== 'written_off') loan.status = currentState.status;
 
-    // Update Next Payment Amount for InterestOnly (Compounding)
-    // For EMI, it stays at the fixed EMI amount unless we want to dynamically change it (not recommended for now).
-    // For InterestOnly, the user owes the interest of the current capitalized balance.
-    if (loan.loanScheme === 'InterestOnly') {
-        const periodicRate = getPeriodicInterestRate(loan);
-        loan.nextPaymentAmount = Math.round(loan.currentPrincipal * periodicRate);
+        // Update Next Payment Amount for InterestOnly (Compounding)
+        if (loan.loanScheme === 'InterestOnly') {
+            const periodicRate = getPeriodicInterestRate(loan);
+            loan.nextPaymentAmount = Math.round(loan.currentPrincipal * periodicRate);
+        }
+        
+        await loan.save();
     }
-    
-    // We do NOT save virtualTransactions to DB permanently in 'transactions' array to avoid clutter?
-    // User wants to SEE it. 
-    // Option A: Save valid "Interest" transactions to DB? 
-    // No, that might duplicate if we re-run.
-    // Better: Helper returns them, and Statement Logic merges them? 
-    // `recalculateLedger` is usually void/update.
-    // Let's attach them to a temporary field or rely on Client to generate them?
-    // NO, Engine is solving the math. 
-    // Let's UPDATE the loan with a new field `ledgerHistory`?
-    
-    // For now, save core fields.
-    await loan.save();
     
     return currentState; // Return state so API can use it if needed
 };

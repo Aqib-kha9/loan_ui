@@ -42,6 +42,8 @@ export interface LedgerEntry {
     debit: number;
     credit: number;
     balance: number;
+    principalBalance: number; // New Field
+    interestBalance: number;  // New Field
     interestComponent?: number;
     principalComponent?: number;
     refNo?: string;
@@ -76,6 +78,8 @@ export function generateStatement(params: StatementParams): LedgerEntry[] {
         debit: loanAmount,
         credit: 0,
         balance: loanAmount,
+        principalBalance: loanAmount,
+        interestBalance: 0,
         refNo: "-"
     });
 
@@ -149,6 +153,8 @@ export function generateStatement(params: StatementParams): LedgerEntry[] {
                     debit: interestAmount,
                     credit: 0,
                     balance: outstandingPrincipal + unpaidInterest, 
+                    principalBalance: outstandingPrincipal,
+                    interestBalance: unpaidInterest,
                     interestComponent: interestAmount,
                     principalComponent: 0
                 });
@@ -166,7 +172,7 @@ export function generateStatement(params: StatementParams): LedgerEntry[] {
                 intPaid = txn.interestComponent;
                 prinPaid = txn.principalComponent;
             } else {
-                intPaid = Math.min(amount, unpaidInterest);
+                intPaid = Math.min(amount, Math.max(0, unpaidInterest));
                 prinPaid = amount - intPaid;
             }
 
@@ -181,6 +187,8 @@ export function generateStatement(params: StatementParams): LedgerEntry[] {
                 debit: 0,
                 credit: amount,
                 balance: outstandingPrincipal + unpaidInterest,
+                principalBalance: outstandingPrincipal,
+                interestBalance: unpaidInterest,
                 refNo: txn.reference || '-',
                 interestComponent: intPaid,
                 principalComponent: prinPaid,

@@ -112,42 +112,62 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
 
             {/* Ledger Table */}
             <table className="w-full border-collapse border-2 border-black text-sm mb-8 break-inside-auto">
-                <thead className="table-header-group">
-                    <tr className="bg-gray-200">
+                <thead className="bg-gray-100 border-b-2 border-black">
+                    <tr>
                         <th className="border border-black p-2 text-left w-24">Date</th>
                         <th className="border border-black p-2 text-left">Particulars</th>
-                        <th className="border border-black p-2 text-left w-28">Ref No.</th>
+                        <th className="border border-black p-2 text-left w-20">Ref No.</th>
                         <th className="border border-black p-2 text-right w-24">Principal</th>
-                        <th className="border border-black p-2 text-right w-24">Interest</th>
-                        <th className="border border-black p-2 text-right w-24">Total Paid</th>
-                        <th className="border border-black p-2 text-right w-28">Balance</th>
+                        <th className="border border-black p-2 text-right w-24 text-red-600">Interest</th>
+                        <th className="border border-black p-2 text-right w-24 text-emerald-600">Total Paid</th>
+                        <th className="border border-black p-2 text-right w-28">Prin. Bal</th>
+                        <th className="border border-black p-2 text-right w-24">Int. Due</th>
                     </tr>
                 </thead>
                 <tbody className="table-row-group">
                     {/* Transactions */}
                     {(data.transactions || []).map((txn, i) => (
                         <tr key={i} className="break-inside-avoid page-break-inside-avoid">
-                            <td className="border border-black p-2 whitespace-nowrap">{format(new Date(txn.date), "dd-MMM-yyyy")}</td>
-                            <td className="border border-black p-2">{txn.particulars || (txn.type === 'Disbursal' ? 'Loan Disbursal' : txn.type)}</td>
-                            <td className="border border-black p-2">{txn.refNo || '-'}</td>
-                            <td className="border border-black p-2 text-right">
+                            <td className="border border-black p-2 whitespace-nowrap text-xs">
+                                {(() => {
+                                    try {
+                                        const d = new Date(txn.date);
+                                        return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('en-GB');
+                                    } catch (e) { return '-'; }
+                                })()}
+                            </td>
+                            <td className="border border-black p-2 text-xs font-semibold">{txn.particulars || (txn.type === 'Disbursal' ? 'Loan Disbursal' : txn.type)}</td>
+                            <td className="border border-black p-2 text-xs">{txn.ref || txn.refNo || '-'}</td>
+
+                            {/* Principal Component */}
+                            <td className={`border border-black p-2 text-right text-xs font-mono ${(txn.principalComponent || 0) < 0 ? "text-red-500" : ""}`}>
                                 {txn.principalComponent ? Number(txn.principalComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}
                             </td>
-                            <td className="border border-black p-2 text-right">
+
+                            {/* Interest Component */}
+                            <td className="border border-black p-2 text-right text-xs font-mono text-red-600">
                                 {txn.interestComponent
                                     ? Number(txn.interestComponent).toLocaleString('en-IN', { minimumFractionDigits: 2 })
                                     : '-'
                                 }
                             </td>
-                            <td className="border border-black p-2 text-right font-bold">
-                                {/* Only show in Total Paid if it is a payment */}
-                                {txn.isPayment
-                                    ? Number(txn.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })
+
+                            {/* Total Paid (Credit) */}
+                            <td className="border border-black p-2 text-right text-xs font-bold font-mono text-emerald-600">
+                                {(txn.credit > 0 || txn.isPayment)
+                                    ? Number(txn.amount || txn.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 })
                                     : '-'
                                 }
                             </td>
-                            <td className="border border-black p-2 text-right">
-                                {Number(txn.balanceAfter).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+
+                            {/* Principal Balance */}
+                            <td className="border border-black p-2 text-right text-xs font-mono">
+                                {(txn.principalBalance ?? txn.balanceAfter ?? txn.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+
+                            {/* Interest Due (Balance) */}
+                            <td className="border border-black p-2 text-right text-xs font-bold font-mono">
+                                {(txn.interestBalance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
                         </tr>
                     ))}
@@ -162,12 +182,55 @@ export const ClassicStatement = ({ data, company }: StatementProps) => {
                         <span>{Number(data.totalInterest || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
                     </div>
                     <div className="flex justify-between mb-2">
+                        <span className="font-bold">Total Principal Paid:</span>
+                        <span>{Number((data as any).totalPrincipalPaid || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
+                    </div>
+                    <div className="flex justify-between mb-2">
+                        <span className="font-bold">Total Interest Paid:</span>
+                        <span>{Number((data as any).totalInterestPaid || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
+                    </div>
+                    <div className="flex justify-between mb-2 border-t border-black pt-1">
                         <span className="font-bold">Total Amount Paid:</span>
                         <span>{Number(data.totalPaid || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
                     </div>
-                    <div className="border-t border-black pt-2 flex justify-between text-lg font-bold">
-                        <span>Closing Balance:</span>
-                        <span>{Number(data.closingBalance || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
+
+                    {/* Closing Balance Section */}
+                    <div className="border-t border-black pt-2">
+                        {(() => {
+                            // Get the last transaction to find split balances
+                            const lastTxn = data.transactions[data.transactions.length - 1];
+                            const closingBal = data.closingBalance || 0;
+                            const principalBal = lastTxn?.principalBalance ?? closingBal;
+                            const interestBal = lastTxn?.interestBalance ?? 0;
+
+                            // If Interest Balance is negative (Advance), show breakdown
+                            if (interestBal < 0) {
+                                return (
+                                    <>
+                                        <div className="flex justify-between text-sm">
+                                            <span>Outstanding Principal:</span>
+                                            <span>{Number(principalBal).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm text-emerald-700 italic">
+                                            <span>Less: Advance Interest:</span>
+                                            <span>{Number(Math.abs(interestBal)).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
+                                        </div>
+                                        <div className="flex justify-between text-lg font-bold border-t border-dashed border-gray-400 mt-1 pt-1">
+                                            <span>Net Closing Balance:</span>
+                                            <span>{Number(closingBal).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
+                                        </div>
+                                    </>
+                                );
+                            }
+
+                            // Standard View
+                            return (
+                                <div className="flex justify-between text-lg font-bold">
+                                    <span>Closing Balance:</span>
+                                    <span>{Number(closingBal).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</span>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
             </div>

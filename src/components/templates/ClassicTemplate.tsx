@@ -9,7 +9,16 @@ interface ReceiptProps {
     company: CompanySettings;
 }
 
+// Helper to safely parse numbers
 export const ClassicTemplate = ({ data, company }: ReceiptProps) => {
+
+    const pBal = data.principalBalance !== undefined ? Number(data.principalBalance) : (data.remainingBalance ? Number(data.remainingBalance) : 0);
+    const iBal = data.interestBalance !== undefined ? Number(data.interestBalance) : 0;
+
+    // Total Outstanding Logic: Principal + Positive Interest. Ignore Advance (Negative Interest) for liability.
+    const totalOutstanding = pBal + Math.max(0, iBal);
+    const advancePaid = iBal < 0 ? Math.abs(iBal) : 0;
+
     return (
         <div className="w-[210mm] min-h-[297mm] p-16 border bg-white text-black font-serif mx-auto shadow-2xl flex flex-col box-border">
             {/* Header: Logo Side-by-Side with Name */}
@@ -105,10 +114,34 @@ export const ClassicTemplate = ({ data, company }: ReceiptProps) => {
                     )}
                 </tbody>
                 <tfoot>
-                    <tr className="bg-gray-100 font-bold">
-                        <td className="border-2 border-black p-4 text-right text-xl uppercase italic text-gray-600">Total Outstanding Balance</td>
-                        <td className="border-2 border-black p-4 text-right text-3xl text-emerald-700">
-                            {data.remainingBalance ? Number(data.remainingBalance).toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) : '₹0.00'}
+                    <tr className="bg-gray-100 font-bold border-t-2 border-black">
+                        <td className="border-2 border-black p-4 text-right text-lg uppercase italic text-gray-600">Principal Balance</td>
+                        <td className="border-2 border-black p-4 text-right text-2xl text-black">
+                            {pBal.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
+                        </td>
+                    </tr>
+
+                    {/* Interest Row - Handle Positive (Due) and Negative (Advance) separately for clarity */}
+                    {advancePaid > 0 ? (
+                        <tr className="bg-green-50 font-bold text-green-800">
+                            <td className="border-2 border-black p-4 text-right text-lg uppercase italic">Advance Interest Paid</td>
+                            <td className="border-2 border-black p-4 text-right text-2xl">
+                                {advancePaid.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
+                            </td>
+                        </tr>
+                    ) : (
+                        <tr className="bg-red-50 font-bold text-red-800">
+                            <td className="border-2 border-black p-4 text-right text-lg uppercase italic">Interest Due</td>
+                            <td className="border-2 border-black p-4 text-right text-2xl">
+                                {iBal.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
+                            </td>
+                        </tr>
+                    )}
+
+                    <tr className="bg-gray-200 font-extrabold border-t-4 border-black">
+                        <td className="border-2 border-black p-4 text-right text-xl uppercase italic text-gray-800">Total Outstanding</td>
+                        <td className="border-2 border-black p-4 text-right text-3xl text-emerald-800">
+                            {totalOutstanding.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}
                         </td>
                     </tr>
                 </tfoot>
