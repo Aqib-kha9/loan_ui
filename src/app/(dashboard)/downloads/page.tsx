@@ -6,6 +6,7 @@ import { Download, FileText, Printer, PenLine } from "lucide-react";
 import { useReactToPrint } from "react-to-print";
 import { RegionalDisbursal } from "@/components/templates/RegionalDisbursal";
 import { RegionalTemplate } from "@/components/templates/RegionalTemplate";
+import { PatniReceiptTemplate } from "@/components/templates/PatniReceiptTemplate";
 import { useSettings } from "@/components/providers/settings-provider";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
@@ -13,6 +14,16 @@ export default function DownloadsPage() {
     const { companySettings } = useSettings();
     const blankPromissoryRef = useRef<HTMLDivElement>(null);
     const blankVoucherRef = useRef<HTMLDivElement>(null);
+    const blankPatniRef = useRef<HTMLDivElement>(null);
+
+    const handlePrintPatni = useReactToPrint({
+        contentRef: blankPatniRef,
+        documentTitle: `Deposit_Receipt_Template`,
+        pageStyle: `
+            @page { size: A4; margin: 0mm; }
+            @media print { body { -webkit-print-color-adjust: exact; } }
+        `
+    });
 
     const handlePrintPromissory = useReactToPrint({
         contentRef: blankPromissoryRef,
@@ -48,11 +59,11 @@ export default function DownloadsPage() {
 
     // --- FILL & PRINT LOGIC ---
     const [isFillDialogOpen, setIsFillDialogOpen] = React.useState(false);
-    const [activeTemplate, setActiveTemplate] = React.useState<'promissory' | 'voucher' | 'cash_voucher' | null>(null);
+    const [activeTemplate, setActiveTemplate] = React.useState<'promissory' | 'voucher' | 'cash_voucher' | 'patni' | null>(null);
 
     const [templateData, setTemplateData] = React.useState<any>({});
 
-    const openFillDialog = (type: 'promissory' | 'voucher' | 'cash_voucher') => {
+    const openFillDialog = (type: 'promissory' | 'voucher' | 'cash_voucher' | 'patni') => {
         setActiveTemplate(type);
         setTemplateData({}); // Reset
         setIsFillDialogOpen(true);
@@ -61,6 +72,7 @@ export default function DownloadsPage() {
     const handlePrintFilled = () => {
         if (activeTemplate === 'promissory') handlePrintPromissory();
         if (activeTemplate === 'voucher' || activeTemplate === 'cash_voucher') handlePrintVoucher();
+        if (activeTemplate === 'patni') handlePrintPatni();
     };
 
     const handleInputChange = (field: string, value: string) => {
@@ -149,6 +161,29 @@ export default function DownloadsPage() {
                 </div>
 
             </div>
+            {/* Patni Deposit Receipt Card */}
+            <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
+                <div className="p-6">
+                    <div className="mb-4 rounded-full w-12 h-12 bg-purple-100 flex items-center justify-center text-purple-600">
+                        <FileText className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-xl font-semibold leading-none tracking-tight mb-2">Deposit Receipt</h3>
+                    <p className="text-sm text-muted-foreground mb-6">
+                        Patni Finance & Investment fixed deposit receipt format.
+                    </p>
+                    <div className="flex gap-2">
+                        <Button onClick={() => openFillDialog('patni')} variant="default" className="flex-1 gap-2 bg-purple-600 hover:bg-purple-700 text-white">
+                            <PenLine className="w-4 h-4" /> Fill & Print
+                        </Button>
+                        <Button onClick={() => handlePrintPatni()} variant="outline" className="gap-2 border-purple-200 hover:bg-purple-50 text-purple-700">
+                            <Printer className="w-4 h-4" /> Blank
+                        </Button>
+                    </div>
+                </div>
+                <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 pointer-events-none">
+                    <FileText className="w-32 h-32" />
+                </div>
+            </div>
 
             {/* Hidden Print Content */}
             <div className="hidden">
@@ -161,6 +196,12 @@ export default function DownloadsPage() {
                 <div ref={blankVoucherRef}>
                     <RegionalTemplate
                         data={activeTemplate === 'voucher' ? templateData : {}}
+                        company={companySettings}
+                    />
+                </div>
+                <div ref={blankPatniRef}>
+                    <PatniReceiptTemplate
+                        data={activeTemplate === 'patni' ? templateData : {}}
                         company={companySettings}
                     />
                 </div>
@@ -196,6 +237,14 @@ export default function DownloadsPage() {
                                     title={activeTemplate === 'cash_voucher' ? 'CASH VOUCHER' : undefined}
                                 />
                             )}
+                            {activeTemplate === 'patni' && (
+                                <PatniReceiptTemplate
+                                    data={templateData}
+                                    company={companySettings}
+                                    mode="edit"
+                                    onChange={(field, val) => handleInputChange(field, val)}
+                                />
+                            )}
 
                         </div>
                     </div>
@@ -209,6 +258,6 @@ export default function DownloadsPage() {
                 </DialogContent>
             </Dialog>
 
-        </div>
+        </div >
     );
 }
