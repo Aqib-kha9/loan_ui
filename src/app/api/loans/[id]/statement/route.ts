@@ -58,6 +58,7 @@ export async function GET(
              credit: txn.credit,
              balance: txn.balance,
              refNo: txn.refNo,
+             txnId: txn.txnId,
              // NEW FIELDS
              principalComponent: txn.principalComponent,
              interestComponent: txn.interestComponent,

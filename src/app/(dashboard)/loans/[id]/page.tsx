@@ -19,8 +19,16 @@ import {
 import { generateLedger, LedgerEntry } from "@/lib/ledger-utils";
 import { mapLoanToFrontend } from "@/lib/mapper";
 import { LoanAccount } from "@/lib/mock-data";
-import { ArrowLeft, Download, IndianRupee, Calendar, User, Phone, MapPin, Receipt, Loader2, Trash2, Printer } from "lucide-react";
+import { ArrowLeft, Download, IndianRupee, Calendar, User, Phone, MapPin, Receipt, Loader2, Trash2, Printer, RotateCcw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { PERMISSIONS } from "@/lib/constants/permissions";
@@ -39,6 +47,8 @@ export default function LoanLedgerPage() {
     const [loan, setLoan] = useState<LoanAccount | null>(null); // Type updated
     const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [revertTxnTarget, setRevertTxnTarget] = useState<any>(null);
+    const [isReverting, setIsReverting] = useState(false);
     const { checkPermission, isLoading: isAuthLoading } = useAuth();
     const { companySettings } = useSettings();
     const receiptRef = useRef<HTMLDivElement>(null);
@@ -86,6 +96,7 @@ export default function LoanLedgerPage() {
                             date: t.date,
                             particulars: t.particulars,
                             refNo: t.refNo || t.ref || '-',
+                            txnId: t.txnId,
                             debit: t.debit,
                             credit: t.credit,
                             balance: t.balance,
@@ -148,6 +159,31 @@ export default function LoanLedgerPage() {
         } catch (error) {
             console.error("Delete error:", error);
             toast.error("An error occurred while deleting the loan");
+        }
+    };
+
+    const handleRevertPayment = async () => {
+        if (!revertTxnTarget || !loan) return;
+        setIsReverting(true);
+        const toastId = toast.loading("Reverting transaction...");
+        try {
+            const res = await fetch(`/api/payments/revert`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ loanNumber: loan.loanNumber, txnId: revertTxnTarget.txnId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                toast.success(data.message || "Payment reverted successfully", { id: toastId });
+                setRevertTxnTarget(null);
+                window.location.reload();
+            } else {
+                toast.error(data.error || "Failed to revert payment", { id: toastId });
+            }
+        } catch (err: any) {
+            toast.error(err.message || "An error occurred", { id: toastId });
+        } finally {
+            setIsReverting(false);
         }
     };
 
@@ -376,6 +412,9 @@ export default function LoanLedgerPage() {
                                             <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9 text-emerald-600">Total Paid</TableHead>
                                             <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9 text-muted-foreground/70">Prin. Bal</TableHead>
                                             <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9">Int. Due</TableHead>
+                                            {checkPermission(PERMISSIONS.REVERT_PAYMENT) && (
+                                                <TableHead className="text-right text-[10px] uppercase tracking-wider font-bold h-9 w-[60px]">Action</TableHead>
+                                            )}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -403,6 +442,21 @@ export default function LoanLedgerPage() {
                                                 <TableCell className="text-right h-10 py-1 font-mono font-bold">
                                                     {(entry.interestBalance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                 </TableCell>
+                                                {checkPermission(PERMISSIONS.REVERT_PAYMENT) && (
+                                                    <TableCell className="text-right h-10 py-1 pr-4">
+                                                        {entry.isPayment && entry.txnId && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-6 w-6 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                                                onClick={(e) => { e.stopPropagation(); setRevertTxnTarget(entry); }}
+                                                                title="Revert Payment"
+                                                            >
+                                                                <RotateCcw className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                        )}
+                                                    </TableCell>
+                                                )}
                                             </TableRow>
                                         ))}
                                     </TableBody>
@@ -515,6 +569,45 @@ export default function LoanLedgerPage() {
                     />
                 )}
             </div>
+
+            {/* Revert Modal */}
+            {revertTxnTarget && (
+                <Dialog open={!!revertTxnTarget} onOpenChange={(open) => !open && !isReverting && setRevertTxnTarget(null)}>
+                    <DialogContent className="sm:max-w-[425px] border-destructive/50">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2 text-destructive">
+                                <AlertTriangle className="h-5 w-5" />
+                                Revert Payment Transaction
+                            </DialogTitle>
+                            <DialogDescription className="py-2">
+                                Are you sure you want to revert this payment of <span className="font-bold text-foreground">₹{Number(revertTxnTarget.credit || revertTxnTarget.amount).toLocaleString('en-IN')}</span>?
+                                <br /><br />
+                                <span className="font-bold text-foreground">This action will:</span>
+                                <ul className="list-disc pl-5 mt-2 space-y-1 text-xs text-left">
+                                    <li>Remove this payment from the ledger history.</li>
+                                    <li>Rollback the repayment schedule to its prior state.</li>
+                                    <li>Automatically recalculate due interest and future balances.</li>
+                                </ul>
+                                <br />
+                                <span className="font-bold text-red-500">Only do this if the entry was a mistake.</span>
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                            <Button variant="ghost" onClick={() => setRevertTxnTarget(null)} disabled={isReverting}>
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                onClick={handleRevertPayment}
+                                disabled={isReverting}
+                                className="bg-destructive hover:bg-destructive/90"
+                            >
+                                {isReverting ? "Reverting..." : "Yes, Revert Payment"}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
         </div>
     );
 }

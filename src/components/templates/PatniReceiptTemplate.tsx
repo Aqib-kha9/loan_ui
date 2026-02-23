@@ -273,7 +273,7 @@ export const PatniReceiptTemplate = ({ data, company, mode = 'view', onChange }:
                         <p className="font-semibold text-[13px] mb-1">Write to us:</p>
                         <p className="flex"><span className="w-20">Email:</span> <span className="text-blue-600 underline font-semibold">{company.email || "patni.finance10@gmail.com"}</span></p>
                         <p className="flex"><span className="w-20">Call us:</span> <span className="font-bold">{company.mobile || "9723468218"}</span></p>
-                        <p className="flex"><span className="w-20">Land line</span> <span className="font-bold">{company.website || "L.Line-2653594185"}</span></p>
+                        <p className="flex"><span className="w-20">Land line:</span> <span className="font-bold">{company.landline || "0265-3594185"}</span></p>
 
                         <p className="mt-4 pt-4 text-[11px] text-gray-800 font-medium">This Receipt has been issued in terms and conditions with {company.name || "Patni Finance"}.</p>
                         <p className="text-[11px] text-gray-700">Reg.office: {company.address || "A-2/2, Tilak Park soc. Harni Road, Vadodara - 390022"}</p>
@@ -281,7 +281,7 @@ export const PatniReceiptTemplate = ({ data, company, mode = 'view', onChange }:
 
                     <div className="flex flex-col items-center justify-end mt-4 pr-8 relative">
                         {/* Stamp & Signature area */}
-                        
+
 
                         <div className="font-bold mt-10 text-[11px] text-center">
                             AUTHORISED SIGNATORY<br />

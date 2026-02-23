@@ -224,7 +224,7 @@ export const RegionalTemplate = ({ data, company, mode = 'view', onChange, title
                                     </div>
                                 </div>
                                 <div className="text-right pr-4 pt-24">
-                                    <span className="text-xs font-bold border-t border-black px-4 pt-1">Receiver's Signature</span>
+                                    <span className="text-xs font-bold border-t border-black px-4 pt-1">Receiver&apos;s Signature</span>
                                 </div>
 
                                 {/* Stamp */}

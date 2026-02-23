@@ -21,6 +21,9 @@ export const PERMISSIONS = {
     // Financials
     VIEW_REPORTS: 'view_reports',
     CREATE_PAYMENT: 'create_payment', // Was MANAGE_PAYMENTS
+    EDIT_PAYMENT: 'edit_payment',
+    DELETE_PAYMENT: 'delete_payment',
+    REVERT_PAYMENT: 'revert_payment',
 
     // System
     VIEW_SETTINGS: 'view_settings',
@@ -42,6 +45,16 @@ export const PERMISSION_MATRIX = [
         permissions: {
             add: PERMISSIONS.CREATE_PAYMENT,
         }
+    },
+    {
+        feature: "Payments",
+        permissions: [
+            { id: "view_payments", label: "View Payments", description: "Can view payment history" },
+            { id: "create_payment", label: "Create Payment", description: "Can process new payments" },
+            { id: "edit_payment", label: "Edit Payment", description: "Can modify existing payments" },
+            { id: "delete_payment", label: "Delete Payment", description: "Can delete payment records" },
+            { id: "revert_payment", label: "Revert Payment", description: "Can safely revert/rollback active payments" }
+        ]
     },
     {
         feature: "Loan Portfolio",

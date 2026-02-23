@@ -8,6 +8,7 @@ export interface CompanySettings {
     address: string;
 
     mobile: string;
+    landline?: string;
     email: string;
     website: string; // Added
     logoUrl: string; // For now just a placeholder URL or base64
@@ -38,6 +39,7 @@ const defaultCompany: CompanySettings = {
     address: "123, Market Road, City Center, Mumbai - 400001",
 
     mobile: "+91 98765 43210",
+    landline: "0265-3594185",
     email: "support@apnafinance.com",
     website: "www.apnafinance.com",
     logoUrl: "https://placehold.co/400x200?text=Patni+Finance",

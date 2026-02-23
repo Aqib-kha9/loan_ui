@@ -8,6 +8,7 @@ export interface LedgerEntry {
     debit: number;  
     credit: number; 
     balance: number;
+    txnId?: string;
     refNo?: string;
     principalComponent?: number;
     interestComponent?: number;

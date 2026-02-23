@@ -1,14 +1,16 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Download, FileText, Printer, PenLine } from "lucide-react";
+import { Download, FileText, Printer, PenLine, Settings2, X } from "lucide-react";
 import { useReactToPrint } from "react-to-print";
 import { RegionalDisbursal } from "@/components/templates/RegionalDisbursal";
 import { RegionalTemplate } from "@/components/templates/RegionalTemplate";
 import { PatniReceiptTemplate } from "@/components/templates/PatniReceiptTemplate";
-import { useSettings } from "@/components/providers/settings-provider";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useSettings, CompanySettings } from "@/components/providers/settings-provider";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
 export default function DownloadsPage() {
     const { companySettings } = useSettings();
@@ -58,10 +60,60 @@ export default function DownloadsPage() {
     });
 
     // --- FILL & PRINT LOGIC ---
-    const [isFillDialogOpen, setIsFillDialogOpen] = React.useState(false);
-    const [activeTemplate, setActiveTemplate] = React.useState<'promissory' | 'voucher' | 'cash_voucher' | 'patni' | null>(null);
+    const [isFillDialogOpen, setIsFillDialogOpen] = useState(false);
+    const [activeTemplate, setActiveTemplate] = useState<'promissory' | 'voucher' | 'cash_voucher' | 'patni' | null>(null);
 
-    const [templateData, setTemplateData] = React.useState<any>({});
+    const [templateData, setTemplateData] = useState<any>({});
+
+    // --- SETTINGS OVERRIDE LOGIC ---
+    const [templateOverrides, setTemplateOverrides] = useState<Record<string, Partial<CompanySettings>>>({});
+    const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
+    const [settingsEditTarget, setSettingsEditTarget] = useState<'promissory' | 'voucher' | 'cash_voucher' | 'patni' | null>(null);
+    const [currentEditSettings, setCurrentEditSettings] = useState<Partial<CompanySettings>>({});
+    const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+
+    useEffect(() => {
+        const saved = localStorage.getItem('templateCompanyOverrides');
+        if (saved) {
+            try {
+                setTemplateOverrides(JSON.parse(saved));
+            } catch (e) {
+                console.error("Failed to parse template overrides", e);
+            }
+        }
+    }, []);
+
+    const saveTemplateOverrides = (newOverrides: Record<string, Partial<CompanySettings>>) => {
+        setTemplateOverrides(newOverrides);
+        localStorage.setItem('templateCompanyOverrides', JSON.stringify(newOverrides));
+    };
+
+    const openSettingsDialog = (type: 'promissory' | 'voucher' | 'cash_voucher' | 'patni') => {
+        setSettingsEditTarget(type);
+        setCurrentEditSettings(templateOverrides[type] || {});
+        setIsSettingsDialogOpen(true);
+    };
+
+    const handleSaveSettings = () => {
+        if (!settingsEditTarget) return;
+        saveTemplateOverrides({
+            ...templateOverrides,
+            [settingsEditTarget]: currentEditSettings
+        });
+        setIsSettingsDialogOpen(false);
+    };
+
+    const handleClearSettings = () => {
+        if (!settingsEditTarget) return;
+        const newOverrides = { ...templateOverrides };
+        delete newOverrides[settingsEditTarget];
+        saveTemplateOverrides(newOverrides);
+        setIsSettingsDialogOpen(false);
+    };
+
+    const getMergedCompany = (type: 'promissory' | 'voucher' | 'cash_voucher' | 'patni') => {
+        return { ...companySettings, ...(templateOverrides[type] || {}) };
+    };
 
     const openFillDialog = (type: 'promissory' | 'voucher' | 'cash_voucher' | 'patni') => {
         setActiveTemplate(type);
@@ -91,8 +143,13 @@ export default function DownloadsPage() {
                 {/* Promissory Note Card */}
                 <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
                     <div className="p-6">
-                        <div className="mb-4 rounded-full w-12 h-12 bg-blue-100 flex items-center justify-center text-blue-600">
-                            <FileText className="w-6 h-6" />
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="rounded-full w-12 h-12 bg-blue-100 flex items-center justify-center text-blue-600">
+                                <FileText className="w-6 h-6" />
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => openSettingsDialog('promissory')} className="text-gray-400 hover:text-gray-900 z-10">
+                                <Settings2 className="w-5 h-5" />
+                            </Button>
                         </div>
                         <h3 className="text-xl font-semibold leading-none tracking-tight mb-2">Promissory Note</h3>
                         <p className="text-sm text-muted-foreground mb-6">
@@ -115,8 +172,13 @@ export default function DownloadsPage() {
                 {/* Voucher Card */}
                 <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
                     <div className="p-6">
-                        <div className="mb-4 rounded-full w-12 h-12 bg-emerald-100 flex items-center justify-center text-emerald-600">
-                            <Download className="w-6 h-6" />
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="rounded-full w-12 h-12 bg-emerald-100 flex items-center justify-center text-emerald-600">
+                                <Download className="w-6 h-6" />
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => openSettingsDialog('voucher')} className="text-gray-400 hover:text-gray-900 z-10">
+                                <Settings2 className="w-5 h-5" />
+                            </Button>
                         </div>
                         <h3 className="text-xl font-semibold leading-none tracking-tight mb-2">Payment Voucher</h3>
                         <p className="text-sm text-muted-foreground mb-6">
@@ -139,8 +201,13 @@ export default function DownloadsPage() {
                 {/* Cash Voucher Card */}
                 <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
                     <div className="p-6">
-                        <div className="mb-4 rounded-full w-12 h-12 bg-amber-100 flex items-center justify-center text-amber-600">
-                            <FileText className="w-6 h-6" />
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="rounded-full w-12 h-12 bg-amber-100 flex items-center justify-center text-amber-600">
+                                <FileText className="w-6 h-6" />
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => openSettingsDialog('cash_voucher')} className="text-gray-400 hover:text-gray-900 z-10">
+                                <Settings2 className="w-5 h-5" />
+                            </Button>
                         </div>
                         <h3 className="text-xl font-semibold leading-none tracking-tight mb-2">Cash Voucher</h3>
                         <p className="text-sm text-muted-foreground mb-6">
@@ -164,8 +231,13 @@ export default function DownloadsPage() {
             {/* Patni Deposit Receipt Card */}
             <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
                 <div className="p-6">
-                    <div className="mb-4 rounded-full w-12 h-12 bg-purple-100 flex items-center justify-center text-purple-600">
-                        <FileText className="w-6 h-6" />
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="rounded-full w-12 h-12 bg-purple-100 flex items-center justify-center text-purple-600">
+                            <FileText className="w-6 h-6" />
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={() => openSettingsDialog('patni')} className="text-gray-400 hover:text-gray-900 z-10">
+                            <Settings2 className="w-5 h-5" />
+                        </Button>
                     </div>
                     <h3 className="text-xl font-semibold leading-none tracking-tight mb-2">Deposit Receipt</h3>
                     <p className="text-sm text-muted-foreground mb-6">
@@ -189,20 +261,20 @@ export default function DownloadsPage() {
             <div className="hidden">
                 <div ref={blankPromissoryRef}>
                     <RegionalDisbursal
-                        data={activeTemplate === 'promissory' ? templateData : {}}
-                        company={companySettings}
+                        data={{}}
+                        company={getMergedCompany('promissory')}
                     />
                 </div>
                 <div ref={blankVoucherRef}>
                     <RegionalTemplate
-                        data={activeTemplate === 'voucher' ? templateData : {}}
-                        company={companySettings}
+                        data={{}}
+                        company={getMergedCompany('voucher')}
                     />
                 </div>
                 <div ref={blankPatniRef}>
                     <PatniReceiptTemplate
-                        data={activeTemplate === 'patni' ? templateData : {}}
-                        company={companySettings}
+                        data={{}}
+                        company={getMergedCompany('patni')}
                     />
                 </div>
             </div>
@@ -223,7 +295,7 @@ export default function DownloadsPage() {
                             {activeTemplate === 'promissory' && (
                                 <RegionalDisbursal
                                     data={templateData}
-                                    company={companySettings}
+                                    company={getMergedCompany('promissory')}
                                     mode="edit"
                                     onChange={(field, val) => handleInputChange(field, val)}
                                 />
@@ -231,7 +303,7 @@ export default function DownloadsPage() {
                             {(activeTemplate === 'voucher' || activeTemplate === 'cash_voucher') && (
                                 <RegionalTemplate
                                     data={templateData}
-                                    company={companySettings}
+                                    company={getMergedCompany(activeTemplate)}
                                     mode="edit"
                                     onChange={(field, val) => handleInputChange(field, val)}
                                     title={activeTemplate === 'cash_voucher' ? 'CASH VOUCHER' : undefined}
@@ -240,7 +312,7 @@ export default function DownloadsPage() {
                             {activeTemplate === 'patni' && (
                                 <PatniReceiptTemplate
                                     data={templateData}
-                                    company={companySettings}
+                                    company={getMergedCompany('patni')}
                                     mode="edit"
                                     onChange={(field, val) => handleInputChange(field, val)}
                                 />
@@ -255,6 +327,139 @@ export default function DownloadsPage() {
                             <Printer className="w-4 h-4" /> Print Document
                         </Button>
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isSettingsDialogOpen} onOpenChange={setIsSettingsDialogOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Template Settings</DialogTitle>
+                        <DialogDescription>
+                            Override the global company settings for this specific template. Leave blank to use defaults.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="companyName">Company Name</Label>
+                            <Input
+                                id="companyName"
+                                value={currentEditSettings.name || ''}
+                                onChange={(e) => setCurrentEditSettings(prev => ({ ...prev, name: e.target.value }))}
+                                placeholder={companySettings.name}
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Company Logo</Label>
+                            <div className="flex items-center gap-4">
+                                {currentEditSettings.logoUrl ? (
+                                    <div className="relative group rounded overflow-hidden border bg-white p-1">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={currentEditSettings.logoUrl} alt="Logo" className="h-10 w-auto object-contain" />
+                                        <Button
+                                            variant="destructive" size="icon" className="absolute -top-2 -right-2 h-5 w-5 rounded-full scale-0 group-hover:scale-100 transition-transform"
+                                            onClick={() => setCurrentEditSettings(prev => ({ ...prev, logoUrl: '' }))}
+                                        >
+                                            <X className="h-3 w-3" />
+                                        </Button>
+                                    </div>
+                                ) : null}
+                                <div className="flex-1">
+                                    <Input
+                                        id="logoUpload"
+                                        type="file"
+                                        accept="image/*"
+                                        className="cursor-pointer file:cursor-pointer"
+                                        onChange={async (e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                setIsUploadingLogo(true);
+                                                const reader = new FileReader();
+                                                reader.onloadend = async () => {
+                                                    try {
+                                                        const res = await fetch('/api/upload', {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify({ image: reader.result })
+                                                        });
+                                                        const data = await res.json();
+                                                        if (data.success) {
+                                                            setCurrentEditSettings(prev => ({ ...prev, logoUrl: data.url }));
+                                                        } else {
+                                                            console.error("Upload failed", data.error);
+                                                        }
+                                                    } catch (err) {
+                                                        console.error(err);
+                                                    } finally {
+                                                        setIsUploadingLogo(false);
+                                                    }
+                                                };
+                                                reader.readAsDataURL(file);
+                                            }
+                                        }}
+                                        disabled={isUploadingLogo}
+                                    />
+                                    {isUploadingLogo && <span className="text-xs text-muted-foreground mt-1 block font-medium animate-pulse">Uploading to cloud storage...</span>}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="tagline">Tagline</Label>
+                            <Input
+                                id="tagline"
+                                value={currentEditSettings.tagline || ''}
+                                onChange={(e) => setCurrentEditSettings(prev => ({ ...prev, tagline: e.target.value }))}
+                                placeholder={companySettings.tagline}
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="address">Address</Label>
+                            <Input
+                                id="address"
+                                value={currentEditSettings.address || ''}
+                                onChange={(e) => setCurrentEditSettings(prev => ({ ...prev, address: e.target.value }))}
+                                placeholder={companySettings.address}
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="grid gap-2">
+                                <Label htmlFor="mobile">Mobile Number</Label>
+                                <Input
+                                    id="mobile"
+                                    value={currentEditSettings.mobile || ''}
+                                    onChange={(e) => setCurrentEditSettings(prev => ({ ...prev, mobile: e.target.value }))}
+                                    placeholder={companySettings.mobile}
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="landline">Landline Number</Label>
+                                <Input
+                                    id="landline"
+                                    value={currentEditSettings.landline || ''}
+                                    onChange={(e) => setCurrentEditSettings(prev => ({ ...prev, landline: e.target.value }))}
+                                    placeholder={companySettings.landline || "0265-3594185"}
+                                />
+                            </div>
+                            <div className="grid gap-2 col-span-2">
+                                <Label htmlFor="email">Email</Label>
+                                <Input
+                                    id="email"
+                                    type="email"
+                                    value={currentEditSettings.email || ''}
+                                    onChange={(e) => setCurrentEditSettings(prev => ({ ...prev, email: e.target.value }))}
+                                    placeholder={companySettings.email}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    <DialogFooter className="flex justify-between sm:justify-between w-full">
+                        <Button variant="destructive" onClick={handleClearSettings} disabled={!templateOverrides[settingsEditTarget!]}>
+                            Clear Overrides
+                        </Button>
+                        <div className="flex gap-2">
+                            <Button variant="ghost" onClick={() => setIsSettingsDialogOpen(false)}>Cancel</Button>
+                            <Button onClick={handleSaveSettings}>Save Context</Button>
+                        </div>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 

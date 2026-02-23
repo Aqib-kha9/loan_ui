@@ -293,6 +293,7 @@ export const recalculateLedger = async (loanId: string, toDate?: Date, persist: 
                  balance: currentState.outstandingPrincipal + currentState.accruedInterest,
                  particulars: txn.description || `Payment Received`,
                  refNo: txn.reference,
+                 txnId: txn.txnId,
                  // NEW FIELDS for UI Transparency
                  principalComponent: principalPaid,
                  interestComponent: interestPaid,
