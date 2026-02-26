@@ -8,6 +8,9 @@ import { RegionalDisbursal } from "@/components/templates/RegionalDisbursal";
 import { RegionalTemplate } from "@/components/templates/RegionalTemplate";
 import { PatniReceiptTemplate } from "@/components/templates/PatniReceiptTemplate";
 import { LoanRecordTemplate } from "@/components/templates/LoanRecordTemplate";
+import { GujaratAnnualStatementTemplate } from "@/components/templates/GujaratAnnualStatementTemplate";
+import { GujaratReceiptTemplate } from "@/components/templates/GujaratReceiptTemplate";
+import { GujaratLoanConditionsTemplate } from "@/components/templates/GujaratLoanConditionsTemplate";
 import { useSettings, CompanySettings } from "@/components/providers/settings-provider";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -19,12 +22,15 @@ export default function DownloadsPage() {
     const blankVoucherRef = useRef<HTMLDivElement>(null);
     const blankPatniRef = useRef<HTMLDivElement>(null);
     const blankLoanRecordRef = useRef<HTMLDivElement>(null);
+    const blankAnnualStatementRef = useRef<HTMLDivElement>(null);
+    const blankGujaratReceiptRef = useRef<HTMLDivElement>(null);
+    const blankLoanConditionsRef = useRef<HTMLDivElement>(null);
 
     const handlePrintPatni = useReactToPrint({
         contentRef: blankPatniRef,
         documentTitle: `Deposit_Receipt_Template`,
         pageStyle: `
-            @page { size: A4; margin: 0mm; }
+            @page { size: A4; margin: 10mm; }
             @media print { body { -webkit-print-color-adjust: exact; } }
         `
     });
@@ -33,10 +39,17 @@ export default function DownloadsPage() {
         contentRef: blankLoanRecordRef,
         documentTitle: `Loan_Record_Register`,
         pageStyle: `
-            @page { size: landscape; margin: 0mm; }
+            @page { size: landscape !important; margin: 0 !important; }
             @media print { 
                 body { -webkit-print-color-adjust: exact; }
-                .landscape-container { width: 100vw !important; height: 100vh !important; }
+                .landscape-container { 
+                    width: 297mm !important; 
+                    height: 210mm !important; 
+                    margin: 0 !important;
+                    padding: 10mm !important;
+                }
+                table { border: 1px solid black !important; }
+                th, td { border: 1px solid black !important; }
             }
         `
     });
@@ -47,7 +60,7 @@ export default function DownloadsPage() {
         pageStyle: `
             @page {
                 size: A4;
-                margin: 0mm;
+                margin: 10mm;
             }
             @media print {
                 body {
@@ -63,7 +76,7 @@ export default function DownloadsPage() {
         pageStyle: `
             @page {
                 size: A4;
-                margin: 0mm;
+                margin: 10mm;
             }
             @media print {
                 body {
@@ -73,16 +86,43 @@ export default function DownloadsPage() {
         `
     });
 
+    const handlePrintAnnualStatement = useReactToPrint({
+        contentRef: blankAnnualStatementRef,
+        documentTitle: `Annual_Statement_Template`,
+        pageStyle: `
+            @page { size: A4; margin: 10mm; }
+            @media print { body { -webkit-print-color-adjust: exact; } }
+        `
+    });
+
+    const handlePrintGujaratReceipt = useReactToPrint({
+        contentRef: blankGujaratReceiptRef,
+        documentTitle: `Gujarat_Receipt_Template`,
+        pageStyle: `
+            @page { size: A4; margin: 10mm; }
+            @media print { body { -webkit-print-color-adjust: exact; } }
+        `
+    });
+
+    const handlePrintLoanConditions = useReactToPrint({
+        contentRef: blankLoanConditionsRef,
+        documentTitle: `Loan_Conditions_Template`,
+        pageStyle: `
+            @page { size: A4; margin: 10mm; }
+            @media print { body { -webkit-print-color-adjust: exact; } }
+        `
+    });
+
     // --- FILL & PRINT LOGIC ---
     const [isFillDialogOpen, setIsFillDialogOpen] = useState(false);
-    const [activeTemplate, setActiveTemplate] = useState<'promissory' | 'voucher' | 'cash_voucher' | 'patni' | 'loan_record' | null>(null);
+    const [activeTemplate, setActiveTemplate] = useState<'promissory' | 'voucher' | 'cash_voucher' | 'patni' | 'loan_record' | 'annual_statement' | 'gujarat_receipt' | 'loan_conditions' | null>(null);
 
     const [templateData, setTemplateData] = useState<any>({});
 
     // --- SETTINGS OVERRIDE LOGIC ---
     const [templateOverrides, setTemplateOverrides] = useState<Record<string, Partial<CompanySettings>>>({});
     const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
-    const [settingsEditTarget, setSettingsEditTarget] = useState<'promissory' | 'voucher' | 'cash_voucher' | 'patni' | 'loan_record' | null>(null);
+    const [settingsEditTarget, setSettingsEditTarget] = useState<'promissory' | 'voucher' | 'cash_voucher' | 'patni' | 'loan_record' | 'annual_statement' | 'gujarat_receipt' | 'loan_conditions' | null>(null);
     const [currentEditSettings, setCurrentEditSettings] = useState<Partial<CompanySettings>>({});
     const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
@@ -102,7 +142,7 @@ export default function DownloadsPage() {
         localStorage.setItem('templateCompanyOverrides', JSON.stringify(newOverrides));
     };
 
-    const openSettingsDialog = (type: 'promissory' | 'voucher' | 'cash_voucher' | 'patni' | 'loan_record') => {
+    const openSettingsDialog = (type: 'promissory' | 'voucher' | 'cash_voucher' | 'patni' | 'loan_record' | 'annual_statement' | 'gujarat_receipt' | 'loan_conditions') => {
         setSettingsEditTarget(type);
         setCurrentEditSettings(templateOverrides[type] || {});
         setIsSettingsDialogOpen(true);
@@ -125,11 +165,11 @@ export default function DownloadsPage() {
         setIsSettingsDialogOpen(false);
     };
 
-    const getMergedCompany = (type: 'promissory' | 'voucher' | 'cash_voucher' | 'patni' | 'loan_record') => {
+    const getMergedCompany = (type: 'promissory' | 'voucher' | 'cash_voucher' | 'patni' | 'loan_record' | 'annual_statement' | 'gujarat_receipt' | 'loan_conditions') => {
         return { ...companySettings, ...(templateOverrides[type] || {}) };
     };
 
-    const openFillDialog = (type: 'promissory' | 'voucher' | 'cash_voucher' | 'patni' | 'loan_record') => {
+    const openFillDialog = (type: 'promissory' | 'voucher' | 'cash_voucher' | 'patni' | 'loan_record' | 'annual_statement' | 'gujarat_receipt' | 'loan_conditions') => {
         setActiveTemplate(type);
         setTemplateData({}); // Reset
         setIsFillDialogOpen(true);
@@ -140,6 +180,9 @@ export default function DownloadsPage() {
         if (activeTemplate === 'voucher' || activeTemplate === 'cash_voucher') handlePrintVoucher();
         if (activeTemplate === 'patni') handlePrintPatni();
         if (activeTemplate === 'loan_record') handlePrintLoanRecord();
+        if (activeTemplate === 'annual_statement') handlePrintAnnualStatement();
+        if (activeTemplate === 'gujarat_receipt') handlePrintGujaratReceipt();
+        if (activeTemplate === 'loan_conditions') handlePrintLoanConditions();
     };
 
     const handleInputChange = (field: string, value: string) => {
@@ -301,6 +344,93 @@ export default function DownloadsPage() {
                 </div>
             </div>
 
+            {/* Annual Statement Card */}
+            <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
+                <div className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="rounded-full w-12 h-12 bg-rose-100 flex items-center justify-center text-rose-600">
+                            <FileText className="w-6 h-6" />
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={() => openSettingsDialog('annual_statement')} className="text-gray-400 hover:text-gray-900 z-10">
+                            <Settings2 className="w-5 h-5" />
+                        </Button>
+                    </div>
+                    <h3 className="text-xl font-semibold leading-none tracking-tight mb-2">Annual Statement</h3>
+                    <p className="text-sm text-muted-foreground mb-6">
+                        વર્ષના અંતનું હિસાબનું લેવડ-દેવડનું વાર્ષિક પત્રક (Form 15, Rule 15).
+                    </p>
+                    <div className="flex gap-2">
+                        <Button onClick={() => openFillDialog('annual_statement')} variant="default" className="flex-1 gap-2 bg-rose-600 hover:bg-rose-700 text-white">
+                            <PenLine className="w-4 h-4" /> Fill & Print
+                        </Button>
+                        <Button onClick={() => handlePrintAnnualStatement()} variant="outline" className="gap-2 border-rose-200 hover:bg-rose-50 text-rose-700">
+                            <Printer className="w-4 h-4" /> Blank
+                        </Button>
+                    </div>
+                </div>
+                <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 pointer-events-none">
+                    <FileText className="w-32 h-32" />
+                </div>
+            </div>
+
+            {/* Gujarat Receipt Card */}
+            <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
+                <div className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="rounded-full w-12 h-12 bg-cyan-100 flex items-center justify-center text-cyan-600">
+                            <FileText className="w-6 h-6" />
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={() => openSettingsDialog('gujarat_receipt')} className="text-gray-400 hover:text-gray-900 z-10">
+                            <Settings2 className="w-5 h-5" />
+                        </Button>
+                    </div>
+                    <h3 className="text-xl font-semibold leading-none tracking-tight mb-2">Loan Receipt (Gujarati)</h3>
+                    <p className="text-sm text-muted-foreground mb-6">
+                        નમુનો નં. ૧૨-૧૩ (પહોચ) - Statutory loan receipt format in Gujarati.
+                    </p>
+                    <div className="flex gap-2">
+                        <Button onClick={() => openFillDialog('gujarat_receipt')} variant="default" className="flex-1 gap-2 bg-cyan-600 hover:bg-cyan-700 text-white">
+                            <PenLine className="w-4 h-4" /> Fill & Print
+                        </Button>
+                        <Button onClick={() => handlePrintGujaratReceipt()} variant="outline" className="gap-2 border-cyan-200 hover:bg-cyan-50 text-cyan-700">
+                            <Printer className="w-4 h-4" /> Blank
+                        </Button>
+                    </div>
+                </div>
+                <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 pointer-events-none">
+                    <FileText className="w-32 h-32" />
+                </div>
+            </div>
+
+            {/* Loan Conditions Card */}
+            <div className="group relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
+                <div className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="rounded-full w-12 h-12 bg-orange-100 flex items-center justify-center text-orange-600">
+                            <FileText className="w-6 h-6" />
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={() => openSettingsDialog('loan_conditions')} className="text-gray-400 hover:text-gray-900 z-10">
+                            <Settings2 className="w-5 h-5" />
+                        </Button>
+                    </div>
+                    <h3 className="text-xl font-semibold leading-none tracking-tight mb-2">Loan Conditions (Gujarati)</h3>
+                    <p className="text-sm text-muted-foreground mb-6">
+                        નમૂનો ક્રમાંક ૧૧ (લોનના શરતોના વિગતો દર્શાવતું પત્રક) - Statutory loan conditions statement.
+                    </p>
+                    <div className="flex gap-2">
+                        <Button onClick={() => openFillDialog('loan_conditions')} variant="default" className="flex-1 gap-2 bg-orange-600 hover:bg-orange-700 text-white">
+                            <PenLine className="w-4 h-4" /> Fill & Print
+                        </Button>
+                        <Button onClick={() => handlePrintLoanConditions()} variant="outline" className="gap-2 border-orange-200 hover:bg-orange-50 text-orange-700">
+                            <Printer className="w-4 h-4" /> Blank
+                        </Button>
+                    </div>
+                </div>
+                <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 pointer-events-none">
+                    <FileText className="w-32 h-32" />
+                </div>
+            </div>
+
             {/* Hidden Print Content */}
             <div className="hidden">
                 <div ref={blankPromissoryRef}>
@@ -325,6 +455,24 @@ export default function DownloadsPage() {
                     <LoanRecordTemplate
                         data={activeTemplate === 'loan_record' ? templateData : {}}
                         company={getMergedCompany('loan_record')}
+                    />
+                </div>
+                <div ref={blankAnnualStatementRef}>
+                    <GujaratAnnualStatementTemplate
+                        data={activeTemplate === 'annual_statement' ? templateData : {}}
+                        company={getMergedCompany('annual_statement')}
+                    />
+                </div>
+                <div ref={blankGujaratReceiptRef}>
+                    <GujaratReceiptTemplate
+                        data={activeTemplate === 'gujarat_receipt' ? templateData : {}}
+                        company={getMergedCompany('gujarat_receipt')}
+                    />
+                </div>
+                <div ref={blankLoanConditionsRef}>
+                    <GujaratLoanConditionsTemplate
+                        data={activeTemplate === 'loan_conditions' ? templateData : {}}
+                        company={getMergedCompany('loan_conditions')}
                     />
                 </div>
             </div>
@@ -377,6 +525,30 @@ export default function DownloadsPage() {
                                 <LoanRecordTemplate
                                     data={templateData}
                                     company={getMergedCompany('loan_record')}
+                                    mode="edit"
+                                    onChange={(field, val) => handleInputChange(field, val)}
+                                />
+                            )}
+                            {activeTemplate === 'annual_statement' && (
+                                <GujaratAnnualStatementTemplate
+                                    data={templateData}
+                                    company={getMergedCompany('annual_statement')}
+                                    mode="edit"
+                                    onChange={(field, val) => handleInputChange(field, val)}
+                                />
+                            )}
+                            {activeTemplate === 'gujarat_receipt' && (
+                                <GujaratReceiptTemplate
+                                    data={templateData}
+                                    company={getMergedCompany('gujarat_receipt')}
+                                    mode="edit"
+                                    onChange={(field, val) => handleInputChange(field, val)}
+                                />
+                            )}
+                            {activeTemplate === 'loan_conditions' && (
+                                <GujaratLoanConditionsTemplate
+                                    data={templateData}
+                                    company={getMergedCompany('loan_conditions')}
                                     mode="edit"
                                     onChange={(field, val) => handleInputChange(field, val)}
                                 />

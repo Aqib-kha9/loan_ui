@@ -29,8 +29,6 @@ const formSchema = z.object({
 
 import { useAuth } from "@/components/providers/auth-provider"; // Import useAuth
 
-// ...
-
 export default function LoginPage() {
     const router = useRouter();
     const { companySettings } = useSettings();

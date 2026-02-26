@@ -165,29 +165,6 @@ export const LoanRecordTemplate = ({ data, mode = 'view', onChange }: LoanRecord
                 </table>
             </div>
 
-            {/* Standard style tag for orientation enforcement */}
-            <style dangerouslySetInnerHTML={{
-                __html: `
-                @page { 
-                    size: landscape !important; 
-                    margin: 0 !important; 
-                }
-                @media print {
-                    .landscape-container {
-                        width: 297mm !important;
-                        height: 210mm !important;
-                        margin: 0 !important;
-                        padding: 10mm !important;
-                        border: none !important;
-                    }
-                    table {
-                        border: 1px solid black !important;
-                    }
-                    th, td {
-                        border: 1px solid black !important;
-                    }
-                }
-            `}} />
         </div>
     );
 };
